@@ -1,10 +1,12 @@
 import React from 'react';
+import { t } from '../lib/i18n.js';
 
-function statusLabel(status) {
-  return status === 1 ? 'Enabled' : 'Disabled';
+function statusLabel(lang, status) {
+  return status === 1 ? t(lang, 'enable') : t(lang, 'disable');
 }
 
 export default function ChannelList({
+  lang,
   channels,
   totalCount,
   selectedId,
@@ -22,7 +24,7 @@ export default function ChannelList({
       <div className='card-inner'>
         <div className='row row-spread'>
           <h2 className='card-title' style={{ margin: 0 }}>
-            Channels
+            {t(lang, 'channels')}
           </h2>
           <span className='small'>
             {shown} shown · {total} total
@@ -33,12 +35,13 @@ export default function ChannelList({
 
         <div className='filterbar'>
           <div className='filterbar-left'>
-            <div className='label'>Search</div>
+            <div className='label'>{t(lang, 'search_channels')}</div>
             <input
               className='input input-search'
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
-              placeholder='Search channel name'
+               placeholder={t(lang, 'search_channels')}
+
               autoCapitalize='none'
               autoCorrect='off'
               spellCheck={false}
@@ -46,28 +49,31 @@ export default function ChannelList({
           </div>
 
           <div className='filterbar-right'>
-            <div className='label'>Status</div>
+            <div className='label'>{t(lang, 'status')}</div>
             <div className='segmented'>
               <button
                 className={`seg ${statusFilter === 'all' ? 'seg-active' : ''}`}
                 onClick={() => onStatusFilterChange('all')}
                 type='button'
               >
-                All
+                 {t(lang, 'all')}
+
               </button>
               <button
                 className={`seg ${statusFilter === 'enabled' ? 'seg-active' : ''}`}
                 onClick={() => onStatusFilterChange('enabled')}
                 type='button'
               >
-                Enabled
+                 {t(lang, 'enable')}
+
               </button>
               <button
                 className={`seg ${statusFilter === 'disabled' ? 'seg-active' : ''}`}
                 onClick={() => onStatusFilterChange('disabled')}
                 type='button'
               >
-                Disabled
+                 {t(lang, 'disable')}
+
               </button>
             </div>
           </div>
@@ -76,7 +82,7 @@ export default function ChannelList({
         <div style={{ height: 12 }} />
 
         {!channels?.length ? (
-          <div className='small'>No channels match your filters.</div>
+          <div className='small'>{t(lang, 'no_channels_loaded')}</div>
         ) : (
           <div className='list'>
             {channels.map((c, idx) => (
@@ -90,12 +96,13 @@ export default function ChannelList({
                   <div>
                     <div style={{ fontWeight: 600 }}>{c.name}</div>
                     <div className='small'>
-                      Type {c.type} · {statusLabel(c.status)}
+                      Type {c.type} · {statusLabel(lang, c.status)}
                     </div>
                   </div>
                   <div className='badge'>
                     <span className={`dot ${c.status === 1 ? 'dot-on' : 'dot-off'}`} />
-                    <span>Used {Number(c.used_quota ?? 0).toLocaleString()}</span>
+                     <span>{t(lang, 'used_quota')}: {Number(c.used_quota ?? 0).toLocaleString()}</span>
+
                   </div>
                 </div>
               </div>

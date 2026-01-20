@@ -1,24 +1,26 @@
 import React, { useMemo, useState } from 'react';
 
-function statusInfo(status) {
+import { t } from '../lib/i18n.js';
+
+function statusInfo(lang, status) {
   const enabled = status === 1;
   return {
     enabled,
-    label: enabled ? 'Enabled' : 'Disabled',
+    label: enabled ? t(lang, 'enable') : t(lang, 'disable'),
   };
 }
 
-export default function ChannelDetail({ channel, onToggle, onUpdateKey, onRefreshQuota, busy }) {
+export default function ChannelDetail({ lang, channel, onToggle, onUpdateKey, onRefreshQuota, onTest, busy }) {
   const [newKey, setNewKey] = useState('');
 
-  const info = useMemo(() => statusInfo(channel?.status), [channel?.status]);
+  const info = useMemo(() => statusInfo(lang, channel?.status), [lang, channel?.status]);
 
   if (!channel) {
     return (
       <div className='card animate-in'>
         <div className='card-inner'>
-          <h2 className='card-title'>Channel</h2>
-          <div className='small'>Select a channel on the left.</div>
+          <h2 className='card-title'>{t(lang, 'channels')}</h2>
+          <div className='small'>{t(lang, 'select_supplier_to_view')}</div>
         </div>
       </div>
     );
@@ -43,31 +45,41 @@ export default function ChannelDetail({ channel, onToggle, onUpdateKey, onRefres
         <div style={{ height: 14 }} />
 
         <div className='kv'>
-          <div className='label'>Used quota</div>
+          <div className='label'>{t(lang, 'used_quota')}</div>
+          <div style={{ fontFamily: 'var(--mono)' }}>{Number(channel.used_quota ?? 0).toLocaleString()}</div>
+        </div>
+
+        <div className='kv'>
+          <div className='label'>{t(lang, 'balance')}</div>
           <div style={{ fontFamily: 'var(--mono)' }}>
-            {Number(channel.used_quota ?? 0).toLocaleString()}
+            {channel.balance === undefined || channel.balance === null
+              ? '-'
+              : `$${Number(channel.balance).toFixed(4)}`}
           </div>
         </div>
 
         <div className='kv'>
-          <div className='label'>Actions</div>
+          <div className='label'>{t(lang, 'actions')}</div>
           <div className='row'>
             <button
               className={`btn ${info.enabled ? 'btn-danger' : 'btn-primary'}`}
               disabled={busy}
               onClick={() => onToggle(channel.id, !info.enabled)}
             >
-              {info.enabled ? 'Disable' : 'Enable'}
+              {info.enabled ? t(lang, 'disable') : t(lang, 'enable')}
             </button>
             <button className='btn' disabled={busy} onClick={() => onRefreshQuota(channel.id)}>
-              Refresh quota
+              {t(lang, 'refresh_usage')}
+            </button>
+            <button className='btn' disabled={busy || !onTest} onClick={() => onTest?.(channel.id)}>
+              {t(lang, 'test')}
             </button>
           </div>
         </div>
 
         <div style={{ height: 8 }} />
 
-        <div className='label'>Update API key (write-only)</div>
+        <div className='label'>{t(lang, 'key_write_only')}</div>
         <div style={{ height: 6 }} />
         <input
           className='input'
@@ -89,9 +101,9 @@ export default function ChannelDetail({ channel, onToggle, onUpdateKey, onRefres
               onUpdateKey(channel.id, v);
             }}
           >
-            Submit key
+            {t(lang, 'submit_key')}
           </button>
-          <span className='small'>Key is never displayed after submission.</span>
+          <span className='small'>{t(lang, 'notes_key_write_only')}</span>
         </div>
       </div>
     </div>

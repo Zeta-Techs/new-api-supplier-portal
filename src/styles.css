@@ -77,6 +77,11 @@ body {
   font-size: 13px;
 }
 
+h3 {
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -172,6 +177,14 @@ body {
   padding: 12px 12px;
   outline: none;
   font-family: var(--mono);
+}
+
+select.input {
+  font-family: var(--sans);
+}
+
+input[type='checkbox'] {
+  accent-color: var(--accent);
 }
 
 .row {

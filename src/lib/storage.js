@@ -1,22 +1,23 @@
-const KEY = 'supplierToken';
+const KEY = 'portalUser';
 
-export function loadToken() {
+export function loadUser() {
   try {
-    return localStorage.getItem(KEY) || '';
+    const raw = localStorage.getItem(KEY) || '';
+    return raw ? JSON.parse(raw) : null;
   } catch {
-    return '';
+    return null;
   }
 }
 
-export function saveToken(token) {
+export function saveUser(user) {
   try {
-    localStorage.setItem(KEY, token);
+    localStorage.setItem(KEY, JSON.stringify(user || null));
   } catch {
     // ignore
   }
 }
 
-export function clearToken() {
+export function clearUser() {
   try {
     localStorage.removeItem(KEY);
   } catch {

@@ -1,8 +1,5 @@
-# channel-browse Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-channel-search. Update Purpose after archive.
-## Requirements
 ### Requirement: Channel List Search
 The system SHALL allow the user to search visible channels by name within the channel list UI.
 
@@ -27,4 +24,3 @@ The system SHALL handle channel selection predictably when search and filters ch
 #### Scenario: Selected channel filtered out
 - **WHEN** the currently selected channel is no longer visible due to search or status filtering
 - **THEN** the system selects the first visible channel if one exists; otherwise it clears the selection
-
