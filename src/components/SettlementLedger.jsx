@@ -7,6 +7,7 @@ import {
 } from '../lib/api.js';
 import { t } from '../lib/i18n.js';
 import { centsToRmb, centsToUsd, rmbToCents, usdToCents } from '../lib/money.js';
+import { formatDatetimeLocal, parseDatetimeLocal } from '../lib/time.js';
 
 export default function SettlementLedger({
   lang,
@@ -104,7 +105,7 @@ export default function SettlementLedger({
       .sort((a, b) => Number(b.created_at) - Number(a.created_at))
       .map((r) => ({
         ...r,
-        timeInput: new Date(Number(r.created_at)).toISOString().slice(0, 16),
+        timeInput: formatDatetimeLocal(Number(r.created_at)),
         usdInput: String((Number(r.amount_usd_cents || 0) / 100).toFixed(2)),
         rmbInput: String((Number(r.amount_rmb_cents || 0) / 100).toFixed(2)),
       }));
@@ -201,10 +202,10 @@ export default function SettlementLedger({
                           defaultValue={r.timeInput}
                           disabled={busy}
                           onBlur={(e) => {
-                            const v = String(e.target.value || '').trim();
-                            if (!v) return;
-                            const tMs = Date.parse(v);
-                            if (!Number.isFinite(tMs)) return;
+                           const v = String(e.target.value || '').trim();
+                           if (!v) return;
+                            const tMs = parseDatetimeLocal(v);
+                            if (!Number.isFinite(Number(tMs))) return;
                             saveRow(r.id, { created_at: tMs });
                           }}
                         />

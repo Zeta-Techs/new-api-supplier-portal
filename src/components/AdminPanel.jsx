@@ -21,6 +21,7 @@ import {
   upsertSupplierGrant,
 } from '../lib/api.js';
 import { t } from '../lib/i18n.js';
+import { formatTs } from '../lib/time.js';
 import { channelTypeLabel, formatUsdFromQuota, usdNumberFromQuota } from '../lib/format.js';
 
 const OPS = [
@@ -609,7 +610,7 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
           {connTest ? (
             <span className='small'>
               · {t(lang, 'conn_tested')} · {connTest.ok ? t(lang, 'connected') : t(lang, 'failed')} ·{' '}
-              {new Date(connTest.checked_at).toLocaleString()} · {connTest.message}
+              {formatTs(lang, connTest.checked_at)} · {connTest.message}
             </span>
           ) : null}
         </div>
@@ -1036,7 +1037,7 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
                                        <tbody>
                                          {expandedAudit.map((a) => (
                                            <tr key={a.id}>
-                                             <td style={{ fontFamily: 'var(--mono)' }}>{new Date(Number(a.created_at)).toLocaleString()}</td>
+                                              <td style={{ fontFamily: 'var(--mono)' }}>{formatTs(lang, Number(a.created_at))}</td>
                                              <td style={{ fontFamily: 'var(--mono)' }}>
                                                {a.actor_role} #{a.actor_user_id}
                                              </td>

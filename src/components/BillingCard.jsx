@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { getMyBilling, getMySettlements } from '../lib/api.js';
 import { t } from '../lib/i18n.js';
 import { centsToRmb, centsToUsd } from '../lib/money.js';
+import { formatTs } from '../lib/time.js';
 
 export default function BillingCard({ lang, busy, onBusyChange, pushToast }) {
   const [data, setData] = useState(null);
@@ -120,7 +121,7 @@ export default function BillingCard({ lang, busy, onBusyChange, pushToast }) {
                       .sort((a, b) => Number(b.created_at) - Number(a.created_at))
                       .map((s) => (
                         <tr key={s.id}>
-                          <td style={{ fontFamily: 'var(--mono)' }}>{new Date(Number(s.created_at)).toLocaleString()}</td>
+                          <td style={{ fontFamily: 'var(--mono)' }}>{formatTs(lang, Number(s.created_at))}</td>
                           <td style={{ fontFamily: 'var(--mono)', textAlign: 'right' }}>{centsToUsd(s.amount_usd_cents)}</td>
                           <td style={{ fontFamily: 'var(--mono)', textAlign: 'right' }}>{centsToRmb(s.amount_rmb_cents)}</td>
                           <td>{s.note || ''}</td>

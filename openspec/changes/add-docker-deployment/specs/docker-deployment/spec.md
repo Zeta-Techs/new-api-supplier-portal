@@ -11,11 +11,16 @@ The repository SHALL provide a Docker build configuration that produces a runnab
 The container SHALL support runtime configuration via environment variables, at minimum:
 - `PORTAL_PORT` (listening port)
 - `PORTAL_DB_FILE` (SQLite database file path)
+- `TZ` (system timezone)
 
 #### Scenario: Operator configures port and DB path
 - **WHEN** an operator starts the container with `PORTAL_PORT` and `PORTAL_DB_FILE` set
 - **THEN** the service listens on `PORTAL_PORT`
 - **AND** portal state is persisted in the SQLite file at `PORTAL_DB_FILE`
+
+#### Scenario: Operator configures timezone
+- **WHEN** an operator starts the container with `TZ` set
+- **THEN** the container uses that timezone for system time
 
 ### Requirement: Compose Example
 The repository SHALL provide an example `docker-compose.yml` for running the portal container.

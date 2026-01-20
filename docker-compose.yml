@@ -5,6 +5,8 @@ services:
       args:
         # Keep empty to use same-origin `/api/...`.
         VITE_API_BASE_URL: ""
+        # Frontend time formatting timezone (build-time).
+        VITE_TZ: Asia/Shanghai
     ports:
       - "3001:3001"
     environment:

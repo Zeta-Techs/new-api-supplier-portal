@@ -19,6 +19,10 @@ COPY . .
 ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
+# Optional: timezone used for frontend date/time formatting.
+ARG VITE_TZ=Asia/Shanghai
+ENV VITE_TZ=$VITE_TZ
+
 RUN npm run build
 
 # Keep only production deps for runtime.
