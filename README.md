@@ -69,6 +69,55 @@ npm run preview
 
 ---
 
+## Docker Deployment / Docker 部署
+
+This repo can be deployed as a single container that serves both the portal API (`/api/*`) and the built SPA.
+
+本仓库支持单容器部署：同一个进程同时提供 `/api/*` 接口和前端页面（SPA）。
+
+### Quick start with docker compose / 使用 docker compose 快速启动
+
+```bash
+docker compose up --build
+```
+
+Then open / 然后打开：
+- http://localhost:3001
+
+Data persistence / 数据持久化：
+- The portal uses SQLite. The compose file mounts a volume to persist the DB at `/data/portal.sqlite`.
+- 门户使用 SQLite；compose 会把数据库持久化到 volume（容器内路径 `/data/portal.sqlite`）。
+
+### Build & run with docker / 使用 docker build + docker run
+
+Build / 构建：
+
+```bash
+docker build -t portal:local .
+```
+
+Run / 运行（使用 named volume 持久化数据库）：
+
+```bash
+docker run --rm \
+  -p 3001:3001 \
+  -e PORTAL_PORT=3001 \
+  -e PORTAL_DB_FILE=/data/portal.sqlite \
+  -v portal-data:/data \
+  portal:local
+```
+
+### Notes / 说明
+
+- Frontend API base URL:
+  - Default Docker deployment uses same-origin `/api/...` (recommended).
+  - If you set `VITE_API_BASE_URL` at image build time, be aware this portal uses cookie-based sessions (`credentials: include`), so cross-origin setups require correct CORS and cookie settings.
+- Frontend API Base URL：
+  - 默认建议同源访问 `/api/...`。
+  - 如需在构建镜像时设置 `VITE_API_BASE_URL`，由于本项目使用 Cookie Session（`credentials: include`），跨域部署需要正确配置 CORS 和 Cookie。
+
+---
+
 ## Configuration / 配置
 
 ### Environment variables / 环境变量
