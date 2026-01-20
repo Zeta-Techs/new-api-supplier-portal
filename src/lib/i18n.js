@@ -129,8 +129,11 @@ export const DICT = {
     sort: '排序',
 
     change_password: '修改密码',
+    change_admin_password: '修改管理员密码',
     password_current: '当前密码',
     password_new: '新密码',
+    password_confirm: '确认新密码',
+    password_mismatch: '两次输入的新密码不一致',
     save: '保存',
 
     supplier_mgmt: '供应商列表',
@@ -256,8 +259,11 @@ export const DICT = {
     sort: 'Sort',
 
     change_password: 'Change password',
+    change_admin_password: 'Change admin password',
     password_current: 'Current password',
     password_new: 'New password',
+    password_confirm: 'Confirm new password',
+    password_mismatch: 'New passwords do not match',
     save: 'Save',
 
     supplier_mgmt: 'Suppliers',

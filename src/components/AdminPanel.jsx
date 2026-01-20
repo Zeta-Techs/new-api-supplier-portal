@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import SupplierManagement from './SupplierManagement.jsx';
+import ChangePasswordCard from './ChangePasswordCard.jsx';
 import {
   createPortalUser,
   getNewApiConfig,
@@ -612,6 +613,17 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
             </span>
           ) : null}
         </div>
+
+        <div style={{ height: 18 }} />
+
+        <ChangePasswordCard
+          lang={lang}
+          busy={busy}
+          onBusyChange={onBusyChange}
+          pushToast={pushToast}
+          titleKey='change_admin_password'
+          inline
+        />
 
         <div style={{ height: 18 }} />
 

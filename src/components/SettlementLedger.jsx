@@ -8,8 +8,20 @@ import {
 import { t } from '../lib/i18n.js';
 import { centsToRmb, centsToUsd, rmbToCents, usdToCents } from '../lib/money.js';
 
-export default function SettlementLedger({ lang, busy, onBusyChange, pushToast, supplierId, balanceRmbCents, onTotalsChange }) {
-  const [open, setOpen] = useState(false);
+export default function SettlementLedger({
+  lang,
+  busy,
+  onBusyChange,
+  pushToast,
+  supplierId,
+  balanceRmbCents,
+  onTotalsChange,
+  open: openProp,
+  onOpenChange,
+  showToggle = true,
+}) {
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openProp === undefined ? openInternal : Boolean(openProp);
   const [rows, setRows] = useState([]);
 
   const [amountUsd, setAmountUsd] = useState('');
@@ -33,7 +45,7 @@ export default function SettlementLedger({ lang, busy, onBusyChange, pushToast, 
   useEffect(() => {
     if (!open) return;
     refresh();
-  }, [open]);
+  }, [open, supplierId]);
 
   const submit = async () => {
     const usdCents = usdToCents(amountUsd);
@@ -99,10 +111,20 @@ export default function SettlementLedger({ lang, busy, onBusyChange, pushToast, 
   }, [rows]);
 
   return (
-    <div style={{ marginTop: 10 }}>
-      <button className='btn' type='button' disabled={busy} onClick={() => setOpen((v) => !v)}>
-        {open ? t(lang, 'collapse') : t(lang, 'expand')} {t(lang, 'ledger')}
-      </button>
+    <div style={{ marginTop: showToggle ? 10 : 0 }}>
+      {!showToggle ? null : (
+        <button
+          className='btn'
+          type='button'
+          disabled={busy}
+          onClick={() => {
+            if (openProp === undefined) setOpenInternal((v) => !v);
+            else onOpenChange?.(!open);
+          }}
+        >
+          {open ? t(lang, 'collapse') : t(lang, 'expand')} {t(lang, 'ledger')}
+        </button>
+      )}
 
       {!open ? null : (
         <>
