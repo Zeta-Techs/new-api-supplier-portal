@@ -6,8 +6,10 @@ import { openDb, initDb } from './db.js';
 import { migrateDb } from './migrations.js';
 import { getCookieName, hashPassword, sanitizeUser, verifyPassword } from './auth.js';
 import { deleteUser, setUserDisabled, updateUserPasswordHash } from './user_repo.js';
-import { getSettledCents, setSettledCents, setSettledRmbCents } from './billing_repo.js';
+import { getSettledCents, setSettledRmbCents } from './billing_repo.js';
 import { getChannelFactor, listChannelPricing, upsertChannelFactor } from './pricing_repo.js';
+import { appendSettlement, deleteSettlement, listSettlements, updateSettlement } from './settlement_repo.js';
+import { AUDIT_ACTIONS, listAuditByChannel, writeAudit } from './audit_repo.js';
 import { getCfgKeys, getNewApiConfig, hasNewApiConfig, setConfigValue } from './config.js';
 import {
   countAdmins,
@@ -20,6 +22,8 @@ import {
   getUserByUsername,
   listGrantsForSupplier,
   listUsers,
+  listAllSupplierGrants,
+  listChannelGrants,
   revokeGrant,
   setGrant,
 } from './repo.js';
@@ -336,6 +340,7 @@ app.get('/api/portal/me/billing', requireAuth, async (req, res) => {
       used_rmb_cents: usage.used_rmb_cents,
       missing_factor_channel_ids: usage.missing_factor_channel_ids,
       settled_rmb_cents: settled.settled_rmb_cents,
+      settled_cents: settled.settled_cents,
       balance_rmb_cents: balanceRmbCents,
     });
   } catch (e) {
@@ -364,28 +369,11 @@ app.get('/api/portal/admin/suppliers/billing', requireAuth, requireAdmin, async 
 });
 
 app.post('/api/portal/admin/suppliers/:id/settled', requireAuth, requireAdmin, (req, res) => {
-  const supplierUserId = Number(req.params.id);
-  const u = getUserById(db, supplierUserId);
-  if (!u || u.role !== 'supplier') return jsonErr(res, 404, 'supplier not found');
-
-  const { settled_cents } = req.body || {};
-  if (settled_cents === undefined || settled_cents === null) return jsonErr(res, 400, 'settled_cents required');
-
-  setSettledCents(db, supplierUserId, Number(settled_cents));
-  jsonOk(res, { ok: true });
+  return jsonErr(res, 410, 'settled USD is now derived from settlement ledger');
 });
 
 app.post('/api/portal/admin/suppliers/:id/settled-rmb', requireAuth, requireAdmin, (req, res) => {
-  const supplierUserId = Number(req.params.id);
-  const u = getUserById(db, supplierUserId);
-  if (!u || u.role !== 'supplier') return jsonErr(res, 404, 'supplier not found');
-
-  const { settled_rmb_cents } = req.body || {};
-  if (settled_rmb_cents === undefined || settled_rmb_cents === null)
-    return jsonErr(res, 400, 'settled_rmb_cents required');
-
-  setSettledRmbCents(db, supplierUserId, Number(settled_rmb_cents));
-  jsonOk(res, { ok: true });
+  return jsonErr(res, 410, 'settled RMB is now derived from settlement ledger');
 });
 
 // --- Pricing factors ---
@@ -404,10 +392,121 @@ app.post('/api/portal/admin/channel-pricing/:id', requireAuth, requireAdmin, (re
   if (!Number.isFinite(f) || f <= 0) return jsonErr(res, 400, 'invalid factor');
 
   upsertChannelFactor(db, channelId, f);
+  writeAudit(db, {
+    actor_role: req.portalUser.role,
+    actor_user_id: req.portalUser.id,
+    action: AUDIT_ACTIONS.ADMIN_FACTOR,
+    channel_id: channelId,
+    message: `set factor=${f}`,
+  });
   jsonOk(res, { ok: true });
 });
 
+// --- Settlement ledger ---
+app.get('/api/portal/admin/suppliers/:id/settlements', requireAuth, requireAdmin, (req, res) => {
+  const supplierUserId = Number(req.params.id);
+  const u = getUserById(db, supplierUserId);
+  if (!u || u.role !== 'supplier') return jsonErr(res, 404, 'supplier not found');
+
+  const rows = listSettlements(db, supplierUserId, { limit: 100 });
+  jsonOk(res, { items: rows });
+});
+
+app.get('/api/portal/me/settlements', requireAuth, (req, res) => {
+  const u = req.portalUser;
+  if (u.role !== 'supplier') return jsonErr(res, 403, 'supplier required');
+  const rows = listSettlements(db, u.id, { limit: 100 });
+  jsonOk(res, { items: rows });
+});
+
+app.get('/api/portal/admin/channels/:id/audit', requireAuth, requireAdmin, (req, res) => {
+  const channelId = Number(req.params.id);
+  if (!channelId) return jsonErr(res, 400, 'channel id required');
+
+  const rows = listAuditByChannel(db, channelId, { limit: 100 });
+  jsonOk(res, { items: rows });
+});
+
+app.post('/api/portal/admin/suppliers/:id/settlements', requireAuth, requireAdmin, (req, res) => {
+  const supplierUserId = Number(req.params.id);
+  const u = getUserById(db, supplierUserId);
+  if (!u || u.role !== 'supplier') return jsonErr(res, 404, 'supplier not found');
+
+  const { amount_usd_cents, amount_rmb_cents, balance_rmb_cents, note } = req.body || {};
+  if (amount_rmb_cents === undefined || amount_rmb_cents === null) return jsonErr(res, 400, 'amount_rmb_cents required');
+
+  const nextTotal = appendSettlement(db, supplierUserId, {
+    amount_usd_cents: Number(amount_usd_cents) || 0,
+    amount_rmb_cents: Number(amount_rmb_cents),
+    balance_rmb_cents: Number(balance_rmb_cents) || 0,
+    note: note ? String(note) : null,
+  });
+
+  writeAudit(db, {
+    actor_role: req.portalUser.role,
+    actor_user_id: req.portalUser.id,
+    action: AUDIT_ACTIONS.ADMIN_SETTLEMENT_ENTRY,
+    supplier_user_id: supplierUserId,
+    message: `append settlement usd_cents=${Number(amount_usd_cents) || 0} rmb_cents=${Number(amount_rmb_cents)}`,
+  });
+
+  jsonOk(res, { settled_total_rmb_cents: nextTotal });
+});
+
+app.post('/api/portal/admin/suppliers/:id/settlements/:sid', requireAuth, requireAdmin, (req, res) => {
+  const supplierUserId = Number(req.params.id);
+  const settlementId = Number(req.params.sid);
+  const u = getUserById(db, supplierUserId);
+  if (!u || u.role !== 'supplier') return jsonErr(res, 404, 'supplier not found');
+  if (!settlementId) return jsonErr(res, 400, 'settlement id required');
+
+  const patch = req.body || {};
+  const r = updateSettlement(db, supplierUserId, settlementId, patch);
+  if (!r.ok) return jsonErr(res, 400, r.message || 'update failed');
+
+  writeAudit(db, {
+    actor_role: req.portalUser.role,
+    actor_user_id: req.portalUser.id,
+    action: AUDIT_ACTIONS.ADMIN_SETTLEMENT_ENTRY,
+    supplier_user_id: supplierUserId,
+    message: `edit settlement id=${settlementId}`,
+  });
+
+  jsonOk(res, { settled_total_rmb_cents: r.settled_total_rmb_cents });
+});
+
+app.delete('/api/portal/admin/suppliers/:id/settlements/:sid', requireAuth, requireAdmin, (req, res) => {
+  const supplierUserId = Number(req.params.id);
+  const settlementId = Number(req.params.sid);
+  const u = getUserById(db, supplierUserId);
+  if (!u || u.role !== 'supplier') return jsonErr(res, 404, 'supplier not found');
+  if (!settlementId) return jsonErr(res, 400, 'settlement id required');
+
+  const r = deleteSettlement(db, supplierUserId, settlementId);
+  if (!r.ok) return jsonErr(res, 400, r.message || 'delete failed');
+
+  writeAudit(db, {
+    actor_role: req.portalUser.role,
+    actor_user_id: req.portalUser.id,
+    action: AUDIT_ACTIONS.ADMIN_SETTLEMENT_ENTRY,
+    supplier_user_id: supplierUserId,
+    message: `delete settlement id=${settlementId}`,
+  });
+
+  jsonOk(res, { settled_total_rmb_cents: r.settled_total_rmb_cents });
+});
+
 // --- Admin: grants ---
+app.get('/api/portal/admin/grants', requireAuth, requireAdmin, (req, res) => {
+  jsonOk(res, { items: listAllSupplierGrants(db) });
+});
+
+app.get('/api/portal/admin/channels/:id/grants', requireAuth, requireAdmin, (req, res) => {
+  const channelId = Number(req.params.id);
+  if (!channelId) return jsonErr(res, 400, 'channel id required');
+  jsonOk(res, { items: listChannelGrants(db, channelId) });
+});
+
 app.get('/api/portal/admin/suppliers/:id/grants', requireAuth, requireAdmin, (req, res) => {
   const supplierUserId = Number(req.params.id);
   const u = getUserById(db, supplierUserId);
@@ -428,6 +527,14 @@ app.post('/api/portal/admin/suppliers/:id/grants', requireAuth, requireAdmin, (r
   if (!ops.length) return jsonErr(res, 400, 'operations required');
 
   setGrant(db, supplierUserId, channelId, ops);
+  writeAudit(db, {
+    actor_role: req.portalUser.role,
+    actor_user_id: req.portalUser.id,
+    action: AUDIT_ACTIONS.ADMIN_GRANT,
+    channel_id: channelId,
+    supplier_user_id: supplierUserId,
+    message: `upsert grant ops=${ops.join(',')}`,
+  });
   jsonOk(res, { ok: true });
 });
 
@@ -435,6 +542,14 @@ app.delete('/api/portal/admin/suppliers/:id/grants/:channelId', requireAuth, req
   const supplierUserId = Number(req.params.id);
   const channelId = Number(req.params.channelId);
   revokeGrant(db, supplierUserId, channelId);
+  writeAudit(db, {
+    actor_role: req.portalUser.role,
+    actor_user_id: req.portalUser.id,
+    action: AUDIT_ACTIONS.ADMIN_GRANT,
+    channel_id: channelId,
+    supplier_user_id: supplierUserId,
+    message: 'revoke grant',
+  });
   jsonOk(res, { ok: true });
 });
 
@@ -529,6 +644,19 @@ app.all(channelProxyPaths, requireAuth, requireNewApiConfigured, async (req, res
         method: 'PUT',
         body: upstreamBody,
       });
+
+      // Audit supplier channel mutations.
+      if (req.portalUser.role === 'supplier') {
+        writeAudit(db, {
+          actor_role: req.portalUser.role,
+          actor_user_id: req.portalUser.id,
+          action: op === OPS.KEY_UPDATE ? AUDIT_ACTIONS.SUPPLIER_KEY : AUDIT_ACTIONS.SUPPLIER_STATUS,
+          channel_id: id,
+          supplier_user_id: req.portalUser.id,
+          message: op === OPS.KEY_UPDATE ? 'update key' : `update status=${body.status}`,
+        });
+      }
+
       return res.status(200).json(json);
     }
 
@@ -551,6 +679,7 @@ app.all(channelProxyPaths, requireAuth, requireNewApiConfigured, async (req, res
       (req.path === '/api/channel/' || req.path === '/api/channel')
     ) {
       const grants = listGrantsForSupplier(db, req.portalUser.id);
+      const opsByChannelId = new Map(grants.map((g) => [String(g.channel_id), g.operations]));
       const allowed = new Set(
         grants
           .filter((g) => hasOp(g.operations, OPS.USAGE_VIEW))
@@ -588,6 +717,7 @@ app.all(channelProxyPaths, requireAuth, requireNewApiConfigured, async (req, res
           ...c,
           price_factor: factor,
           rmb_cost_cents: rmbCents,
+          grant_operations: opsByChannelId.get(String(c.id)) || [],
         };
       });
 
@@ -599,6 +729,29 @@ app.all(channelProxyPaths, requireAuth, requireNewApiConfigured, async (req, res
       query,
       body,
     });
+
+    if (req.portalUser.role === 'supplier') {
+      if (req.method === 'GET' && /^\/api\/channel\/test\/\d+$/.test(req.path)) {
+        writeAudit(db, {
+          actor_role: req.portalUser.role,
+          actor_user_id: req.portalUser.id,
+          action: AUDIT_ACTIONS.SUPPLIER_TEST,
+          channel_id: channelId,
+          supplier_user_id: req.portalUser.id,
+          message: 'test channel',
+        });
+      }
+      if (req.method === 'GET' && /^\/api\/channel\/update_balance\/\d+$/.test(req.path)) {
+        writeAudit(db, {
+          actor_role: req.portalUser.role,
+          actor_user_id: req.portalUser.id,
+          action: AUDIT_ACTIONS.SUPPLIER_REFRESH,
+          channel_id: channelId,
+          supplier_user_id: req.portalUser.id,
+          message: 'refresh usage',
+        });
+      }
+    }
 
     return res.status(200).json(json);
   } catch (e) {

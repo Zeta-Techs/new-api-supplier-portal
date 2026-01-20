@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 
 import { t } from '../lib/i18n.js';
-import { formatUsdFromQuota } from '../lib/format.js';
+import { channelTypeLabel, formatUsdFromQuota } from '../lib/format.js';
 
 function statusInfo(lang, status) {
   const enabled = status === 1;
@@ -35,7 +35,7 @@ export default function ChannelDetail({ lang, channel, onToggle, onUpdateKey, on
             <h2 className='card-title' style={{ margin: 0 }}>
               {channel.name}
             </h2>
-            <div className='small'>ID {channel.id} · Type {channel.type}</div>
+            <div className='small'>ID {channel.id} · Type {channelTypeLabel(channel.type)}</div>
           </div>
           <div className='badge'>
             <span className={`dot ${info.enabled ? 'dot-on' : 'dot-off'}`} />
@@ -64,12 +64,12 @@ export default function ChannelDetail({ lang, channel, onToggle, onUpdateKey, on
           <div className='row'>
             <button
               className={`btn ${info.enabled ? 'btn-danger' : 'btn-primary'}`}
-              disabled={busy}
-              onClick={() => onToggle(channel.id, !info.enabled)}
+              disabled={busy || !onToggle}
+              onClick={() => onToggle?.(channel.id, !info.enabled)}
             >
               {info.enabled ? t(lang, 'disable') : t(lang, 'enable')}
             </button>
-            <button className='btn' disabled={busy} onClick={() => onRefreshQuota(channel.id)}>
+            <button className='btn' disabled={busy || !onRefreshQuota} onClick={() => onRefreshQuota?.(channel.id)}>
               {t(lang, 'refresh_usage')}
             </button>
             <button className='btn' disabled={busy || !onTest} onClick={() => onTest?.(channel.id)}>
@@ -90,16 +90,17 @@ export default function ChannelDetail({ lang, channel, onToggle, onUpdateKey, on
           autoCapitalize='none'
           autoCorrect='off'
           spellCheck={false}
+          disabled={busy || !onUpdateKey}
         />
         <div style={{ height: 10 }} />
         <div className='row row-spread'>
           <button
             className='btn btn-primary'
-            disabled={busy || !newKey}
+            disabled={busy || !onUpdateKey || !newKey}
             onClick={() => {
               const v = newKey;
               setNewKey('');
-              onUpdateKey(channel.id, v);
+              onUpdateKey?.(channel.id, v);
             }}
           >
             {t(lang, 'submit_key')}

@@ -1,9 +1,14 @@
 import React from 'react';
 import { t } from '../lib/i18n.js';
-import { formatUsdFromQuota } from '../lib/format.js';
+import { channelTypeLabel, formatUsdFromQuota } from '../lib/format.js';
 
 function statusLabel(lang, status) {
   return status === 1 ? t(lang, 'enable') : t(lang, 'disable');
+}
+
+function sortMark(sortKey, sortDir, key) {
+  if (sortKey !== key) return '';
+  return sortDir === 'asc' ? ' ^' : ' v';
 }
 
 export default function ChannelList({
@@ -16,9 +21,64 @@ export default function ChannelList({
   onQueryChange,
   statusFilter,
   onStatusFilterChange,
+  grantsByChannelId,
+  onToggle,
+  onTest,
+  onRefreshQuota,
 }) {
   const shown = channels?.length || 0;
   const total = Number.isFinite(totalCount) ? totalCount : shown;
+
+  const [sortKey, setSortKey] = React.useState('id');
+  const [sortDir, setSortDir] = React.useState('asc');
+
+  const visible = React.useMemo(() => {
+    const dir = sortDir === 'desc' ? -1 : 1;
+
+    const getVal = (c) => {
+      if (sortKey === 'id') return Number(c.id);
+      if (sortKey === 'name') return String(c.name || '');
+      if (sortKey === 'type') {
+        const n = Number(c.type);
+        return Number.isFinite(n) ? n : String(channelTypeLabel(c.type));
+      }
+      if (sortKey === 'status') return Number(c.status);
+      if (sortKey === 'used') return Number(c.used_quota ?? 0);
+      if (sortKey === 'factor') {
+        const f = c.price_factor;
+        return f === null || f === undefined ? -Infinity : Number(f);
+      }
+      return Number(c.id);
+    };
+
+    return (channels || [])
+      .slice()
+      .sort((a, b) => {
+        const va = getVal(a);
+        const vb = getVal(b);
+
+        if (Number.isFinite(Number(va)) && Number.isFinite(Number(vb))) {
+          const diff = (Number(va) - Number(vb)) * dir;
+          if (diff !== 0) return diff;
+          return (Number(a.id) - Number(b.id)) * dir;
+        }
+
+        const cmp = String(va).localeCompare(String(vb)) * dir;
+        if (cmp !== 0) return cmp;
+        return (Number(a.id) - Number(b.id)) * dir;
+      });
+  }, [channels, sortKey, sortDir]);
+
+  const setSort = (key) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      setSortDir('asc');
+      return key;
+    });
+  };
 
   return (
     <div className='card animate-in'>
@@ -41,8 +101,7 @@ export default function ChannelList({
               className='input input-search'
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
-               placeholder={t(lang, 'search_channels')}
-
+              placeholder={t(lang, 'search_channels')}
               autoCapitalize='none'
               autoCorrect='off'
               spellCheck={false}
@@ -57,24 +116,21 @@ export default function ChannelList({
                 onClick={() => onStatusFilterChange('all')}
                 type='button'
               >
-                 {t(lang, 'all')}
-
+                {t(lang, 'all')}
               </button>
               <button
                 className={`seg ${statusFilter === 'enabled' ? 'seg-active' : ''}`}
                 onClick={() => onStatusFilterChange('enabled')}
                 type='button'
               >
-                 {t(lang, 'enable')}
-
+                {t(lang, 'enable')}
               </button>
               <button
                 className={`seg ${statusFilter === 'disabled' ? 'seg-active' : ''}`}
                 onClick={() => onStatusFilterChange('disabled')}
                 type='button'
               >
-                 {t(lang, 'disable')}
-
+                {t(lang, 'disable')}
               </button>
             </div>
           </div>
@@ -85,38 +141,113 @@ export default function ChannelList({
         {!channels?.length ? (
           <div className='small'>{t(lang, 'no_channels_loaded')}</div>
         ) : (
-          <div className='list'>
-            {channels.map((c, idx) => (
-              <div
-                key={c.id}
-                className={`item ${selectedId === c.id ? 'item-active' : ''}`}
-                style={{ animationDelay: `${Math.min(idx * 30, 180)}ms` }}
-                onClick={() => onSelect(c.id)}
-              >
-                <div className='row row-spread'>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{c.name}</div>
-                    <div className='small'>
-                      Type {c.type} · {statusLabel(lang, c.status)}
-                    </div>
-                  </div>
-                   <div className='badge'>
-                     <span className={`dot ${c.status === 1 ? 'dot-on' : 'dot-off'}`} />
-                     <span>{t(lang, 'used_quota')}: {formatUsdFromQuota(c.used_quota)}</span>
-                     <span style={{ marginLeft: 10 }}>
-                       {t(lang, 'factor')}: {c.price_factor === null || c.price_factor === undefined ? '-' : c.price_factor}
-                     </span>
-                     <span style={{ marginLeft: 10 }}>
-                       {t(lang, 'rmb_cost')}: {c.rmb_cost_cents === null || c.rmb_cost_cents === undefined ? '-' : `¥${(Number(c.rmb_cost_cents) / 100).toFixed(2)}`}
-                     </span>
-                   </div>
+          <div className='table-wrap'>
+            <table className='table'>
+              <thead>
+                <tr>
+                  <th>
+                    <button className='btn' type='button' onClick={() => setSort('id')}>
+                      ID{sortMark(sortKey, sortDir, 'id')}
+                    </button>
+                  </th>
+                  <th>
+                    <button className='btn' type='button' onClick={() => setSort('name')}>
+                      Name{sortMark(sortKey, sortDir, 'name')}
+                    </button>
+                  </th>
+                  <th>
+                    <button className='btn' type='button' onClick={() => setSort('type')}>
+                      Type{sortMark(sortKey, sortDir, 'type')}
+                    </button>
+                  </th>
+                  <th>
+                    <button className='btn' type='button' onClick={() => setSort('status')}>
+                      {t(lang, 'status')}{sortMark(sortKey, sortDir, 'status')}
+                    </button>
+                  </th>
+                  <th>
+                    <button className='btn' type='button' onClick={() => setSort('used')}>
+                      {t(lang, 'used_quota')}{sortMark(sortKey, sortDir, 'used')}
+                    </button>
+                  </th>
+                  <th>
+                    <button className='btn' type='button' onClick={() => setSort('factor')}>
+                      {t(lang, 'factor')}{sortMark(sortKey, sortDir, 'factor')}
+                    </button>
+                  </th>
+                  <th style={{ width: 260 }}>{t(lang, 'actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((c) => {
+                  const isActive = selectedId === c.id;
+                  const enabled = Number(c.status) === 1;
 
-                </div>
-              </div>
-            ))}
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => onSelect(c.id)}
+                      style={{ cursor: 'pointer', background: isActive ? 'rgba(45, 212, 191, 0.10)' : undefined }}
+                    >
+                      <td style={{ fontFamily: 'var(--mono)' }}>{c.id}</td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{c.name}</div>
+                      </td>
+                      <td>{channelTypeLabel(c.type)}</td>
+                      <td>
+                        <span className='badge'>
+                          <span className={`dot ${enabled ? 'dot-on' : 'dot-off'}`} />
+                          {enabled ? t(lang, 'enable') : t(lang, 'disable')}
+                        </span>
+                      </td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{formatUsdFromQuota(c.used_quota)}</td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{c.price_factor === null || c.price_factor === undefined ? '-' : c.price_factor}</td>
+                      <td>
+                        <div className='row' style={{ gap: 8, justifyContent: 'flex-end' }}>
+                          <button
+                            className={`btn ${enabled ? 'btn-danger' : 'btn-primary'}`}
+                            type='button'
+                            disabled={!grantsByChannelId?.get(String(c.id))?.canStatusUpdate}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggle?.(c.id, !enabled);
+                            }}
+                          >
+                            {enabled ? t(lang, 'disable') : t(lang, 'enable')}
+                          </button>
+                          <button
+                            className='btn'
+                            type='button'
+                            disabled={!grantsByChannelId?.get(String(c.id))?.canUsageRefresh}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRefreshQuota?.(c.id);
+                            }}
+                          >
+                            {t(lang, 'refresh_usage')}
+                          </button>
+                          <button
+                            className='btn'
+                            type='button'
+                            disabled={!grantsByChannelId?.get(String(c.id))?.canTest}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onTest?.(c.id);
+                            }}
+                          >
+                            {t(lang, 'test')}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
     </div>
   );
 }
+

@@ -67,7 +67,38 @@ export function initDb(db) {
       FOREIGN KEY(supplier_user_id) REFERENCES portal_users(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS supplier_settlements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      supplier_user_id INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      amount_usd_cents INTEGER NOT NULL DEFAULT 0,
+      amount_rmb_cents INTEGER NOT NULL,
+      settled_total_rmb_cents INTEGER NOT NULL,
+      balance_rmb_cents INTEGER NOT NULL,
+      note TEXT,
+      FOREIGN KEY(supplier_user_id) REFERENCES portal_users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_supplier_settlements_supplier ON supplier_settlements(supplier_user_id);
+    CREATE INDEX IF NOT EXISTS idx_supplier_settlements_created_at ON supplier_settlements(created_at);
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at INTEGER NOT NULL,
+      actor_role TEXT NOT NULL,
+      actor_user_id INTEGER NOT NULL,
+      action TEXT NOT NULL,
+      channel_id INTEGER,
+      supplier_user_id INTEGER,
+      message TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_channel_id ON audit_log(channel_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_supplier_user_id ON audit_log(supplier_user_id);
+
     CREATE INDEX IF NOT EXISTS idx_supplier_grants_supplier ON supplier_grants(supplier_user_id);
+
     CREATE INDEX IF NOT EXISTS idx_supplier_grants_channel ON supplier_grants(channel_id);
   `);
 }

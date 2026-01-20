@@ -4,6 +4,9 @@ import {
   createPortalUser,
   getNewApiConfig,
   listAllChannels,
+  listAllGrants,
+  listChannelAudit,
+  listChannelGrants,
   listChannelPricing,
   listPortalUsers,
   listSupplierGrants,
@@ -11,10 +14,13 @@ import {
   setNewApiConfig,
   testNewApiConnection,
   upsertChannelPricing,
+  refreshChannelBalance,
+  testChannel,
+  updateChannel,
   upsertSupplierGrant,
 } from '../lib/api.js';
 import { t } from '../lib/i18n.js';
-import { formatUsdFromQuota, usdNumberFromQuota } from '../lib/format.js';
+import { channelTypeLabel, formatUsdFromQuota, usdNumberFromQuota } from '../lib/format.js';
 
 const OPS = [
   { id: 'channel.key.update', labelKey: 'op_key_update' },
@@ -51,9 +57,22 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
 
   const [channels, setChannels] = useState([]);
   const [channelQuery, setChannelQuery] = useState('');
-  const [selectedChannelIds, setSelectedChannelIds] = useState(() => new Set());
 
   const [pricing, setPricing] = useState([]);
+  const [allGrants, setAllGrants] = useState([]);
+
+  const [selectedChannelIds, setSelectedChannelIds] = useState(new Set());
+
+  const [expandedChannelId, setExpandedChannelId] = useState(null);
+  const [expandedGrants, setExpandedGrants] = useState([]);
+  const [expandedAudit, setExpandedAudit] = useState([]);
+  const [opsEditBySupplierId, setOpsEditBySupplierId] = useState({});
+
+  const [sortKey, setSortKey] = useState('id');
+  const [sortDir, setSortDir] = useState('asc');
+
+  const [addSupplierByChannel, setAddSupplierByChannel] = useState({});
+  // removeSupplierByChannel was used for inline row revocation; now revoke lives in the details panel.
 
   const refresh = async () => {
     onBusyChange?.(true);
@@ -81,6 +100,14 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
         setPricing(p?.items || []);
       } catch {
         setPricing([]);
+      }
+
+      // grants (for channel table)
+      try {
+        const gAll = await listAllGrants();
+        setAllGrants(gAll?.items || []);
+      } catch {
+        setAllGrants([]);
       }
 
       if (selectedSupplierId) {
@@ -202,6 +229,148 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
     return m;
   }, [pricing]);
 
+  const grantsByChannelId = useMemo(() => {
+    const m = new Map();
+    (allGrants || []).forEach((g) => {
+      const cid = String(g.channel_id);
+      const arr = m.get(cid) || [];
+      arr.push(g);
+      m.set(cid, arr);
+    });
+    return m;
+  }, [allGrants]);
+
+  const suppliersById = useMemo(() => {
+    const m = new Map();
+    (suppliers || []).forEach((s) => m.set(String(s.id), s));
+    return m;
+  }, [suppliers]);
+
+  const visibleChannels = useMemo(() => {
+    const q = (channelQuery || '').trim().toLowerCase();
+    let rows = (channels || []).filter((c) => {
+      if (!q) return true;
+      return String(c.name || '').toLowerCase().includes(q) || String(c.id).includes(q);
+    });
+
+    const dir = sortDir === 'desc' ? -1 : 1;
+    const key = sortKey;
+
+    const getVal = (c) => {
+      if (key === 'id') return Number(c.id);
+      if (key === 'name') return String(c.name || '');
+      if (key === 'type') return Number(c.type);
+      if (key === 'status') return Number(c.status);
+      if (key === 'used_usd') return usdNumberFromQuota(c.used_quota);
+      if (key === 'factor') {
+        const f = pricingByChannelId.get(String(c.id));
+        return f === undefined ? -Infinity : Number(f);
+      }
+      if (key === 'rmb_cost') {
+        const f = pricingByChannelId.get(String(c.id));
+        return f === undefined ? -Infinity : usdNumberFromQuota(c.used_quota) * Number(f);
+      }
+      if (key === 'granted') {
+        const arr = grantsByChannelId.get(String(c.id)) || [];
+        return arr.length;
+      }
+      return Number(c.id);
+    };
+
+    rows = rows.slice().sort((a, b) => {
+      const va = getVal(a);
+      const vb = getVal(b);
+
+      // numeric
+      if (Number.isFinite(Number(va)) && Number.isFinite(Number(vb))) {
+        const diff = (Number(va) - Number(vb)) * dir;
+        if (diff !== 0) return diff;
+        return (Number(a.id) - Number(b.id)) * dir;
+      }
+
+      // string fallback
+      const cmp = String(va).localeCompare(String(vb)) * dir;
+      if (cmp !== 0) return cmp;
+      return (Number(a.id) - Number(b.id)) * dir;
+    });
+
+
+
+    return rows;
+  }, [channels, channelQuery, sortKey, sortDir, pricingByChannelId, grantsByChannelId]);
+
+  const setSort = (key) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      setSortDir('asc');
+      return key;
+    });
+  };
+
+  const sortMark = (key) => {
+    if (sortKey !== key) return '';
+    return sortDir === 'asc' ? ' ^' : ' v';
+  };
+
+  const toggleSupplierOpForExpanded = (supplierUserId, opId) => {
+    const sid = String(supplierUserId);
+    setOpsEditBySupplierId((prev) => {
+      const set = new Set(prev?.[sid] || []);
+      if (set.has(opId)) set.delete(opId);
+      else set.add(opId);
+      return { ...prev, [sid]: Array.from(set) };
+    });
+  };
+
+  const loadExpandedChannelDetails = async (channelId) => {
+    const id = Number(channelId);
+    if (!id) return;
+
+    const g = await listChannelGrants(id);
+    const items = g?.items || [];
+    setExpandedGrants(items);
+    setOpsEditBySupplierId(() => {
+      const next = {};
+      items.forEach((it) => {
+        next[String(it.supplier_user_id)] = Array.isArray(it.operations) ? it.operations.slice() : [];
+      });
+      return next;
+    });
+
+    const a = await listChannelAudit(id);
+    setExpandedAudit(a?.items || []);
+  };
+
+  const saveExpandedSupplierOps = async (channelId, supplierUserId) => {
+    const id = Number(channelId);
+    const sid = Number(supplierUserId);
+    if (!id || !sid) return;
+
+    const ops = opsEditBySupplierId?.[String(sid)] || [];
+    if (!ops.length) return;
+
+    try {
+      onBusyChange?.(true);
+      await upsertSupplierGrant(sid, {
+        channel_id: id,
+        operations: ops,
+      });
+      pushToast?.(t(lang, 'toast_saved'), t(lang, 'toast_saved'));
+
+      // refresh grant list and the table's grants cache
+      await loadExpandedChannelDetails(id);
+      const gAll = await listAllGrants();
+      setAllGrants(gAll?.items || []);
+    } catch (e) {
+      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed');
+    } finally {
+      onBusyChange?.(false);
+    }
+  };
+
   const toggleChannelSelect = (id) => {
     setSelectedChannelIds((prev) => {
       const next = new Set(prev);
@@ -209,6 +378,65 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
       else next.add(id);
       return next;
     });
+  };
+
+  const toggleExpandChannel = async (channelId) => {
+    const id = Number(channelId);
+    if (!id) return;
+
+    if (expandedChannelId === id) {
+      setExpandedChannelId(null);
+      setExpandedGrants([]);
+      setExpandedAudit([]);
+      setOpsEditBySupplierId({});
+      return;
+    }
+
+    setExpandedChannelId(id);
+    try {
+      onBusyChange?.(true);
+      await loadExpandedChannelDetails(id);
+    } catch (e) {
+      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed to load channel details');
+      setExpandedGrants([]);
+      setExpandedAudit([]);
+      setOpsEditBySupplierId({});
+    } finally {
+      onBusyChange?.(false);
+    }
+  };
+
+
+  const addSupplierGrantForChannel = async (channelId) => {
+    const supplierId = Number(addSupplierByChannel?.[channelId]);
+    if (!supplierId) return;
+    try {
+      onBusyChange?.(true);
+      await upsertSupplierGrant(supplierId, {
+        channel_id: Number(channelId),
+        operations: DEFAULT_OPS,
+      });
+      pushToast?.(t(lang, 'toast_granted'), t(lang, 'toast_granted'));
+      setAddSupplierByChannel((prev) => ({ ...prev, [channelId]: '' }));
+      await refresh();
+    } catch (e) {
+      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed');
+    } finally {
+      onBusyChange?.(false);
+    }
+  };
+
+  const removeSupplierGrantForChannel = async (channelId, supplierUserId) => {
+    try {
+      onBusyChange?.(true);
+      await revokeSupplierGrant(supplierUserId, Number(channelId));
+      pushToast?.(t(lang, 'toast_revoked'), t(lang, 'toast_revoked'));
+      await refresh();
+    } catch (e) {
+      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed');
+    } finally {
+      onBusyChange?.(false);
+    }
   };
 
   const saveFactor = async (channelId, factorStr) => {
@@ -227,6 +455,45 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
       await refresh();
     } catch (e) {
       pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed');
+    } finally {
+      onBusyChange?.(false);
+    }
+  };
+
+  const adminToggle = async (channelId, enabled) => {
+    try {
+      onBusyChange?.(true);
+      const status = enabled ? 1 : 2;
+      await updateChannel({ id: channelId, status });
+      pushToast?.(t(lang, 'toast_saved'), enabled ? t(lang, 'enable') : t(lang, 'disable'));
+      await refresh();
+    } catch (e) {
+      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed to update channel');
+    } finally {
+      onBusyChange?.(false);
+    }
+  };
+
+  const adminRefreshUsage = async (channelId) => {
+    try {
+      onBusyChange?.(true);
+      await refreshChannelBalance(channelId);
+      pushToast?.(t(lang, 'toast_saved'), t(lang, 'refresh_usage'));
+      await refresh();
+    } catch (e) {
+      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed to refresh usage');
+    } finally {
+      onBusyChange?.(false);
+    }
+  };
+
+  const adminTestChannel = async (channelId) => {
+    try {
+      onBusyChange?.(true);
+      await testChannel(channelId);
+      pushToast?.(t(lang, 'toast_saved'), t(lang, 'test'));
+    } catch (e) {
+      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed to test channel');
     } finally {
       onBusyChange?.(false);
     }
@@ -289,35 +556,42 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
         <h3 style={{ margin: '0 0 8px 0' }}>{t(lang, 'conn_title')}</h3>
         <div className='small'>{t(lang, 'conn_desc')}</div>
         <div style={{ height: 10 }} />
-        <div className='label'>{t(lang, 'base_url')}</div>
-        <div style={{ height: 6 }} />
-        <input
-          className='input'
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder='http://localhost:3000'
-          disabled={busy}
-        />
-        <div style={{ height: 10 }} />
-        <div className='label'>{t(lang, 'new_api_user_id')}</div>
-        <div style={{ height: 6 }} />
-        <input
-          className='input'
-          value={newApiUserId}
-          onChange={(e) => setNewApiUserId(e.target.value)}
-          placeholder='1'
-          disabled={busy}
-        />
-        <div style={{ height: 10 }} />
-        <div className='label'>{t(lang, 'root_token')}</div>
-        <div style={{ height: 6 }} />
-        <input
-          className='input'
-          value={accessToken}
-          onChange={(e) => setAccessToken(e.target.value)}
-          placeholder={cfg?.configured ? '(leave blank to keep existing)' : 'paste access token'}
-          disabled={busy}
-        />
+
+        <div className='row' style={{ alignItems: 'end', gap: 10 }}>
+          <div style={{ flex: 2, minWidth: 260 }}>
+            <div className='label'>{t(lang, 'base_url')}</div>
+            <div style={{ height: 6 }} />
+            <input
+              className='input'
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder='http://localhost:3000'
+              disabled={busy}
+            />
+          </div>
+          <div style={{ width: 240 }}>
+            <div className='label'>{t(lang, 'new_api_user_id')}</div>
+            <div style={{ height: 6 }} />
+            <input
+              className='input'
+              value={newApiUserId}
+              onChange={(e) => setNewApiUserId(e.target.value)}
+              placeholder='1'
+              disabled={busy}
+            />
+          </div>
+          <div style={{ flex: 2, minWidth: 260 }}>
+            <div className='label'>{t(lang, 'root_token')}</div>
+            <div style={{ height: 6 }} />
+            <input
+              className='input'
+              value={accessToken}
+              onChange={(e) => setAccessToken(e.target.value)}
+              placeholder={cfg?.configured ? '(leave blank to keep existing)' : 'paste access token'}
+              disabled={busy}
+            />
+          </div>
+        </div>
         <div style={{ height: 10 }} />
         <div className='row'>
           <button className='btn btn-primary' onClick={saveCfg} disabled={busy || !baseUrl || !newApiUserId}>
@@ -462,56 +736,320 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
 
         <div style={{ height: 10 }} />
 
-        {!cfg?.configured ? (
-          <div className='small'>{t(lang, 'configure_first')}</div>
-        ) : !channels.length ? (
-          <div className='small'>{t(lang, 'no_channels_loaded')}</div>
-        ) : (
-          <div className='list'>
-            {channels
-              .filter((c) => {
-                const q = (channelQuery || '').trim().toLowerCase();
-                if (!q) return true;
-                return String(c.name || '').toLowerCase().includes(q) || String(c.id).includes(q);
-              })
-              .map((c) => (
-                <div key={c.id} className='item'>
-                  <div className='row row-spread'>
-                    <label className='row' style={{ gap: 10 }}>
-                      <input
-                        type='checkbox'
-                        checked={selectedChannelIds.has(c.id)}
-                        onChange={() => toggleChannelSelect(c.id)}
-                        disabled={busy || !selectedSupplierId}
-                      />
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{c.name}</div>
-                        <div className='small'>ID {c.id} · Type {c.type} · Status {c.status}</div>
-                      </div>
-                    </label>
-                     <div className='small'>
-                       {t(lang, 'used_quota')}: {formatUsdFromQuota(c.used_quota)} · {t(lang, 'factor')}:{' '}
-                       <input
-                         className='input'
-                         style={{ width: 90, padding: '8px 10px' }}
-                         defaultValue={
-                           pricingByChannelId.has(String(c.id)) ? String(pricingByChannelId.get(String(c.id))) : ''
-                         }
-                         placeholder=''
-                         disabled={busy}
-                         onBlur={(e) => saveFactor(c.id, e.target.value)}
-                       />{' '}
-                       · {t(lang, 'rmb_cost')}: {' '}
-                       {pricingByChannelId.has(String(c.id))
-                         ? `¥${(usdNumberFromQuota(c.used_quota) * pricingByChannelId.get(String(c.id))).toFixed(2)}`
-                         : '-'}
-                     </div>
+         {!cfg?.configured ? (
+           <div className='small'>{t(lang, 'configure_first')}</div>
+         ) : !channels.length ? (
+           <div className='small'>{t(lang, 'no_channels_loaded')}</div>
+         ) : (
+           <div className='table-wrap'>
+             <table className='table'>
+               <thead>
+                 <tr>
+                   <th style={{ width: 40 }} />
+                    <th>
+                      <button className='btn' type='button' onClick={() => setSort('id')} disabled={busy}>
+                        ID{sortMark('id')}
+                      </button>
+                    </th>
+                    <th>
+                      <button className='btn' type='button' onClick={() => setSort('name')} disabled={busy}>
+                        Name{sortMark('name')}
+                      </button>
+                    </th>
+                    <th>
+                      <button className='btn' type='button' onClick={() => setSort('type')} disabled={busy}>
+                        Type{sortMark('type')}
+                      </button>
+                    </th>
+                    <th>
+                      <button className='btn' type='button' onClick={() => setSort('status')} disabled={busy}>
+                        {t(lang, 'status')}{sortMark('status')}
+                      </button>
+                    </th>
+                    <th>
+                      <button className='btn' type='button' onClick={() => setSort('used_usd')} disabled={busy}>
+                        Used (USD){sortMark('used_usd')}
+                      </button>
+                    </th>
+                    <th>
+                      <button className='btn' type='button' onClick={() => setSort('factor')} disabled={busy}>
+                        {t(lang, 'factor')}{sortMark('factor')}
+                      </button>
+                    </th>
+                    <th>
+                      <button className='btn' type='button' onClick={() => setSort('rmb_cost')} disabled={busy}>
+                        {t(lang, 'rmb_cost')}{sortMark('rmb_cost')}
+                      </button>
+                    </th>
+                    <th>
+                      <button className='btn' type='button' onClick={() => setSort('granted')} disabled={busy}>
+                        {t(lang, 'granted_suppliers')}{sortMark('granted')}
+                      </button>
+                    </th>
+                    <th style={{ width: 230 }}>{t(lang, 'actions')}</th>
+                    <th style={{ width: 110 }}>{t(lang, 'details')}</th>
+                 </tr>
+               </thead>
+               <tbody>
+                 {visibleChannels.map((c) => {
+                   const channelId = Number(c.id);
+                   const factor = pricingByChannelId.get(String(c.id));
+                   const usdUsed = usdNumberFromQuota(c.used_quota);
+                   const rmbCost = factor === undefined ? null : usdUsed * Number(factor);
 
-                  </div>
-                </div>
-              ))}
-          </div>
-        )}
+                    const channelGrants = grantsByChannelId.get(String(c.id)) || [];
+
+
+                   const isExpanded = expandedChannelId === channelId;
+
+                   return (
+                     <React.Fragment key={c.id}>
+                       <tr>
+                         <td>
+                           <input
+                             type='checkbox'
+                             checked={selectedChannelIds.has(c.id)}
+                             onChange={() => toggleChannelSelect(c.id)}
+                             disabled={busy || !selectedSupplierId}
+                           />
+                         </td>
+                         <td style={{ fontFamily: 'var(--mono)' }}>{c.id}</td>
+                         <td>{c.name}</td>
+                         <td>{channelTypeLabel(c.type)}</td>
+                         <td>
+                           <span className='badge'>
+                             <span className={`dot ${Number(c.status) === 1 ? 'dot-on' : 'dot-off'}`} />
+                             {Number(c.status) === 1 ? t(lang, 'enable') : t(lang, 'disable')}
+                           </span>
+                         </td>
+                         <td style={{ fontFamily: 'var(--mono)' }}>{formatUsdFromQuota(c.used_quota)}</td>
+                         <td>
+                           <input
+                             className='input'
+                             style={{ width: 78, padding: '6px 8px' }}
+                             defaultValue={factor === undefined ? '' : String(factor)}
+                             placeholder=''
+                             disabled={busy}
+                             onBlur={(e) => saveFactor(c.id, e.target.value)}
+                           />
+                         </td>
+                         <td style={{ fontFamily: 'var(--mono)' }}>{rmbCost === null ? '-' : `¥${rmbCost.toFixed(2)}`}</td>
+                          <td>
+                            <span className='badge'>
+                              {t(lang, 'granted_suppliers')}: {channelGrants.length}
+                            </span>
+                          </td>
+
+                          <td>
+                            <div className='row' style={{ gap: 8, justifyContent: 'flex-end' }}>
+                              <button
+                                className={`btn ${Number(c.status) === 1 ? 'btn-danger' : 'btn-primary'}`}
+                                type='button'
+                                disabled={busy}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adminToggle(channelId, Number(c.status) !== 1);
+                                }}
+                              >
+                                {Number(c.status) === 1 ? t(lang, 'disable') : t(lang, 'enable')}
+                              </button>
+                              <button
+                                className='btn'
+                                type='button'
+                                disabled={busy}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adminRefreshUsage(channelId);
+                                }}
+                              >
+                                {t(lang, 'refresh_usage')}
+                              </button>
+                              <button
+                                className='btn'
+                                type='button'
+                                disabled={busy}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adminTestChannel(channelId);
+                                }}
+                              >
+                                {t(lang, 'test')}
+                              </button>
+                            </div>
+                          </td>
+                          <td>
+                            <button className='btn' type='button' disabled={busy} onClick={() => toggleExpandChannel(channelId)}>
+                              {isExpanded ? t(lang, 'close') : t(lang, 'details')}
+                            </button>
+                          </td>
+
+                       </tr>
+
+                       {!isExpanded ? null : (
+                         <tr>
+                           <td colSpan={11}>
+                             <div className='card' style={{ margin: 10 }}>
+                               <div className='card-inner'>
+                                 <div className='row row-spread'>
+                                   <div>
+                                     <div style={{ fontWeight: 700 }}>{c.name}</div>
+                                     <div className='small'>Channel {c.id}</div>
+                                   </div>
+                                   <button className='btn' type='button' disabled={busy} onClick={() => toggleExpandChannel(channelId)}>
+                                     {t(lang, 'close')}
+                                   </button>
+                                 </div>
+
+                                 <div style={{ height: 12 }} />
+
+                                 <div className='row row-spread'>
+                                   <h3 style={{ margin: '0 0 8px 0' }}>{t(lang, 'granted_suppliers')}</h3>
+                                   <div className='row' style={{ alignItems: 'center', gap: 10 }}>
+                                     <select
+                                       className='input'
+                                       style={{ padding: '8px 10px', minWidth: 200 }}
+                                       value={addSupplierByChannel?.[channelId] || ''}
+                                       onChange={(e) => setAddSupplierByChannel((prev) => ({ ...prev, [channelId]: e.target.value }))}
+                                       disabled={busy}
+                                     >
+                                       <option value=''>{t(lang, 'add_supplier')}</option>
+                                       {suppliers.map((s) => (
+                                         <option key={s.id} value={s.id}>
+                                           {s.username} (id {s.id})
+                                         </option>
+                                       ))}
+                                     </select>
+                                     <button
+                                       className='btn btn-primary'
+                                       type='button'
+                                       disabled={busy || !addSupplierByChannel?.[channelId]}
+                                       onClick={() => addSupplierGrantForChannel(channelId)}
+                                     >
+                                       {t(lang, 'add')}
+                                     </button>
+                                   </div>
+                                 </div>
+
+                                 {!expandedGrants.length ? (
+                                   <div className='small'>-</div>
+                                 ) : (
+                                   <div className='table-wrap'>
+                                     <table className='table'>
+                                       <thead>
+                                         <tr>
+                                           <th>{t(lang, 'supplier')}</th>
+                                           <th>{t(lang, 'ops')}</th>
+                                           <th style={{ width: 140 }} />
+                                         </tr>
+                                       </thead>
+                                       <tbody>
+                                         {expandedGrants.map((g) => {
+                                           const sid = String(g.supplier_user_id);
+                                           const currentOps = opsEditBySupplierId?.[sid] || [];
+                                           const supplierName =
+                                             suppliersById.get(String(g.supplier_user_id))?.username ||
+                                             g.username ||
+                                             `#${g.supplier_user_id}`;
+
+                                           return (
+                                             <tr key={g.supplier_user_id}>
+                                               <td>
+                                                 {supplierName}{' '}
+                                                 <span className='small'>(id {g.supplier_user_id})</span>
+                                               </td>
+                                               <td>
+                                                 <div className='row' style={{ flexWrap: 'wrap', gap: 10 }}>
+                                                   {OPS.map((o) => (
+                                                     <label
+                                                       key={o.id}
+                                                       className='small'
+                                                       style={{ display: 'flex', gap: 8, alignItems: 'center' }}
+                                                     >
+                                                       <input
+                                                         type='checkbox'
+                                                         checked={currentOps.includes(o.id)}
+                                                         onChange={() => toggleSupplierOpForExpanded(g.supplier_user_id, o.id)}
+                                                         disabled={busy}
+                                                       />
+                                                       {t(lang, o.labelKey)}
+                                                     </label>
+                                                   ))}
+                                                 </div>
+                                               </td>
+                                               <td>
+                                                 <div className='row' style={{ justifyContent: 'flex-end' }}>
+                                                   <button
+                                                     className='btn'
+                                                     type='button'
+                                                     disabled={busy || !currentOps.length}
+                                                     onClick={() => saveExpandedSupplierOps(channelId, g.supplier_user_id)}
+                                                   >
+                                                     {t(lang, 'save')}
+                                                   </button>
+                                                   <button
+                                                     className='btn btn-danger'
+                                                     type='button'
+                                                     disabled={busy}
+                                                     onClick={() => removeSupplierGrantForChannel(channelId, g.supplier_user_id)}
+                                                   >
+                                                     {t(lang, 'revoke')}
+                                                   </button>
+                                                 </div>
+                                               </td>
+                                             </tr>
+                                           );
+                                         })}
+                                       </tbody>
+                                     </table>
+                                   </div>
+                                 )}
+
+                                 <div style={{ height: 14 }} />
+
+                                 <h3 style={{ margin: '0 0 8px 0' }}>{t(lang, 'audit_log')}</h3>
+                                 {!expandedAudit.length ? (
+                                   <div className='small'>-</div>
+                                 ) : (
+                                   <div className='table-wrap'>
+                                     <table className='table'>
+                                       <thead>
+                                         <tr>
+                                           <th>{t(lang, 'time')}</th>
+                                           <th>Actor</th>
+                                           <th>Action</th>
+                                           <th>{t(lang, 'supplier')}</th>
+                                           <th>{t(lang, 'note')}</th>
+                                         </tr>
+                                       </thead>
+                                       <tbody>
+                                         {expandedAudit.map((a) => (
+                                           <tr key={a.id}>
+                                             <td style={{ fontFamily: 'var(--mono)' }}>{new Date(Number(a.created_at)).toLocaleString()}</td>
+                                             <td style={{ fontFamily: 'var(--mono)' }}>
+                                               {a.actor_role} #{a.actor_user_id}
+                                             </td>
+                                             <td style={{ fontFamily: 'var(--mono)' }}>{a.action}</td>
+                                             <td style={{ fontFamily: 'var(--mono)' }}>{a.supplier_user_id || ''}</td>
+                                             <td>{a.message || ''}</td>
+                                           </tr>
+                                         ))}
+                                       </tbody>
+                                     </table>
+                                   </div>
+                                 )}
+                               </div>
+                             </div>
+                           </td>
+                         </tr>
+                       )}
+                     </React.Fragment>
+                   );
+                 })}
+               </tbody>
+             </table>
+           </div>
+         )}
+
 
         <div style={{ height: 14 }} />
 

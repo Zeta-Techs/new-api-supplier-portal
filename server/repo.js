@@ -120,6 +120,39 @@ export function getGrant(db, supplierUserId, channelId) {
   };
 }
 
+export function listAllSupplierGrants(db) {
+  return db
+    .prepare(
+      'SELECT supplier_user_id, channel_id, operations_json, created_at FROM supplier_grants ORDER BY channel_id ASC, supplier_user_id ASC',
+    )
+    .all()
+    .map((r) => ({
+      ...r,
+      operations: safeJsonArray(r.operations_json),
+    }));
+}
+
+export function listChannelGrants(db, channelId) {
+  return db
+    .prepare(
+      `SELECT g.supplier_user_id, g.channel_id, g.operations_json, g.created_at,
+              u.username, u.disabled
+       FROM supplier_grants g
+       JOIN portal_users u ON u.id = g.supplier_user_id
+       WHERE g.channel_id = ?
+       ORDER BY u.username ASC`,
+    )
+    .all(Number(channelId))
+    .map((r) => ({
+      supplier_user_id: r.supplier_user_id,
+      channel_id: r.channel_id,
+      operations: safeJsonArray(r.operations_json),
+      created_at: r.created_at,
+      username: r.username,
+      disabled: Boolean(r.disabled),
+    }));
+}
+
 function safeJsonArray(s) {
   try {
     const v = JSON.parse(s);

@@ -1,21 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  deletePortalUser,
-  listPortalUsers,
-  listSupplierBilling,
-  resetUserPassword,
-  setSupplierSettledCents,
-  setSupplierSettledRmbCents,
-  setUserDisabled,
-} from '../lib/api.js';
+import SettlementLedger from './SettlementLedger.jsx';
+import { deletePortalUser, listPortalUsers, listSupplierBilling, resetUserPassword, setUserDisabled } from '../lib/api.js';
+
 import { t } from '../lib/i18n.js';
-import { centsToRmb, centsToUsd, rmbToCents, usdToCents } from '../lib/money.js';
+import { centsToRmb, centsToUsd, usdToCents } from '../lib/money.js';
+
+function sumLedgerTotals(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return list.reduce(
+    (acc, r) => {
+      acc.usd += Number(r?.amount_usd_cents || 0);
+      acc.rmb += Number(r?.amount_rmb_cents || 0);
+      return acc;
+    },
+    { usd: 0, rmb: 0 },
+  );
+}
+
 
 export default function SupplierManagement({ lang, busy, onBusyChange, pushToast }) {
   const [users, setUsers] = useState([]);
   const [billing, setBilling] = useState([]);
 
   const [resetPassById, setResetPassById] = useState({});
+  const [ledgerTotalsBySupplierId, setLedgerTotalsBySupplierId] = useState({});
 
   const refresh = async () => {
     try {
@@ -87,33 +95,9 @@ export default function SupplierManagement({ lang, busy, onBusyChange, pushToast
     }
   };
 
-  const updateSettledUsd = async (supplierId, settledUsdString) => {
-    try {
-      onBusyChange?.(true);
-      const cents = usdToCents(settledUsdString);
-      await setSupplierSettledCents(supplierId, cents);
-      pushToast?.(t(lang, 'toast_saved'), t(lang, 'toast_saved'));
-      await refresh();
-    } catch (e) {
-      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed');
-    } finally {
-      onBusyChange?.(false);
-    }
-  };
+  // USD settled is now derived from the settlement ledger and is read-only in this view.
 
-  const updateSettledRmb = async (supplierId, settledRmbString) => {
-    try {
-      onBusyChange?.(true);
-      const cents = rmbToCents(settledRmbString);
-      await setSupplierSettledRmbCents(supplierId, cents);
-      pushToast?.(t(lang, 'toast_saved'), t(lang, 'toast_saved'));
-      await refresh();
-    } catch (e) {
-      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed');
-    } finally {
-      onBusyChange?.(false);
-    }
-  };
+  // Settled USD/RMB is now derived from the settlement ledger and is read-only in this view.
 
   return (
     <div className='card animate-in'>
@@ -150,7 +134,7 @@ export default function SupplierManagement({ lang, busy, onBusyChange, pushToast
               const usedRmb = centsToRmb(b?.used_rmb_cents);
               const missing = Array.isArray(b?.missing_factor_channel_ids) ? b.missing_factor_channel_ids : [];
               const settledUsd = centsToUsd(b?.settled_cents);
-              const settledRmb = centsToRmb(b?.settled_rmb_cents);
+              const settledRmb = centsToRmb(ledgerTotalsBySupplierId?.[u.id]?.rmb ?? b?.settled_rmb_cents);
               const balanceRmb = centsToRmb(b?.balance_rmb_cents);
 
               return (
@@ -175,32 +159,49 @@ export default function SupplierManagement({ lang, busy, onBusyChange, pushToast
 
                       <div className='grid-2'>
                         <div>
-                          <div className='label'>{t(lang, 'settled_amount')}</div>
+                          <div className='label'>{t(lang, 'settled_amount')} (USD)</div>
                           <div style={{ height: 6 }} />
                           <input
                             className='input'
-                            defaultValue={String((Number(b?.settled_cents || 0) / 100).toFixed(2))}
-                            onBlur={(e) => updateSettledUsd(u.id, e.target.value)}
-                            disabled={busy}
+                            value={String((Number(ledgerTotalsBySupplierId?.[u.id]?.usd ?? b?.settled_cents ?? 0) / 100).toFixed(2))}
+                            disabled
+                            readOnly
                           />
+                          <div className='small'>
+                            {t(lang, 'settled_amount')}: {centsToUsd(ledgerTotalsBySupplierId?.[u.id]?.usd ?? b?.settled_cents)}
+                          </div>
                         </div>
                         <div>
                           <div className='label'>{t(lang, 'settled_rmb')}</div>
                           <div style={{ height: 6 }} />
                           <input
                             className='input'
-                            defaultValue={String((Number(b?.settled_rmb_cents || 0) / 100).toFixed(2))}
-                            onBlur={(e) => updateSettledRmb(u.id, e.target.value)}
-                            disabled={busy}
+                            value={String(
+                              (
+                                Number(ledgerTotalsBySupplierId?.[u.id]?.rmb ?? b?.settled_rmb_cents ?? 0) / 100
+                              ).toFixed(2),
+                            )}
+                            disabled
+                            readOnly
                           />
+                          <div className='small'>
+                            {t(lang, 'settled_rmb')}: {settledRmb}
+                          </div>
                         </div>
                       </div>
 
-                      <div style={{ height: 6 }} />
-
-                      <div className='small'>
-                        {t(lang, 'settled_amount')}: {settledUsd} · {t(lang, 'settled_rmb')}: {settledRmb}
-                      </div>
+                      <SettlementLedger
+                        lang={lang}
+                        busy={busy}
+                        onBusyChange={onBusyChange}
+                        pushToast={pushToast}
+                        supplierId={u.id}
+                        balanceRmbCents={b?.balance_rmb_cents}
+                        onTotalsChange={(rows) => {
+                          const totals = sumLedgerTotals(rows);
+                          setLedgerTotalsBySupplierId((prev) => ({ ...prev, [u.id]: totals }));
+                        }}
+                      />
                     </div>
                     <div style={{ minWidth: 320 }}>
                       <div className='row' style={{ alignItems: 'end' }}>

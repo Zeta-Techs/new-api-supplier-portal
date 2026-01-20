@@ -7,3 +7,8 @@ export function formatUsdFromQuota(q) {
   const usd = usdNumberFromQuota(q);
   return `$${usd.toFixed(4)}`;
 }
+
+export function channelTypeLabel(type) {
+  if (type === undefined || type === null) return '-';
+  return String(type);
+}

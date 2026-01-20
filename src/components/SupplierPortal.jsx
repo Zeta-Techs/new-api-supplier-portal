@@ -7,6 +7,20 @@ import { getChannel, listAllChannels, refreshChannelBalance, testChannel, update
 
 import { t } from '../lib/i18n.js';
 
+function can(grants, op) {
+  const list = Array.isArray(grants) ? grants : [];
+  return list.includes(op);
+}
+
+function grantFlags(grants) {
+  return {
+    canKeyUpdate: can(grants, 'channel.key.update'),
+    canStatusUpdate: can(grants, 'channel.status.update'),
+    canTest: can(grants, 'channel.test'),
+    canUsageRefresh: can(grants, 'channel.usage.refresh'),
+  };
+}
+
 export default function SupplierPortal({ lang, busy, onBusyChange, pushToast }) {
   const [channels, setChannels] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -121,6 +135,18 @@ export default function SupplierPortal({ lang, busy, onBusyChange, pushToast }) 
     }
   };
 
+  const grantsByChannelId = useMemo(() => {
+    const m = new Map();
+    (filteredChannels || []).forEach((c) => {
+      const grants = c?.grant_operations || c?.operations || [];
+      m.set(String(c.id), grantFlags(grants));
+    });
+    return m;
+  }, [filteredChannels]);
+
+  const grantsForSelected = selected?.grant_operations || selected?.operations || [];
+  const flagsForSelected = grantFlags(grantsForSelected);
+
   return (
     <>
       <div className='grid-2'>
@@ -141,15 +167,19 @@ export default function SupplierPortal({ lang, busy, onBusyChange, pushToast }) 
           onQueryChange={setChannelQuery}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
+          grantsByChannelId={grantsByChannelId}
+          onToggle={onToggle}
+          onTest={onTest}
+          onRefreshQuota={onRefreshQuota}
         />
         <ChannelDetail
           lang={lang}
           channel={selected}
           busy={busy}
-          onToggle={onToggle}
-          onUpdateKey={onUpdateKey}
-          onRefreshQuota={onRefreshQuota}
-          onTest={onTest}
+          onToggle={flagsForSelected.canStatusUpdate ? onToggle : undefined}
+          onUpdateKey={flagsForSelected.canKeyUpdate ? onUpdateKey : undefined}
+          onRefreshQuota={flagsForSelected.canUsageRefresh ? onRefreshQuota : undefined}
+          onTest={flagsForSelected.canTest ? onTest : undefined}
         />
       </div>
     </>

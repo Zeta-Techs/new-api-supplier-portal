@@ -67,6 +67,10 @@ export async function getMyBilling() {
   return apiRequest('/api/portal/me/billing');
 }
 
+export async function getMySettlements() {
+  return apiRequest('/api/portal/me/settlements');
+}
+
 export async function listSupplierBilling() {
   return apiRequest('/api/portal/admin/suppliers/billing');
 }
@@ -78,6 +82,7 @@ export async function setSupplierSettledCents(supplierUserId, settled_cents) {
   });
 }
 
+// Deprecated: RMB settled is derived from settlement ledger.
 export async function setSupplierSettledRmbCents(supplierUserId, settled_rmb_cents) {
   return apiRequest(`/api/portal/admin/suppliers/${supplierUserId}/settled-rmb`, {
     method: 'POST',
@@ -93,6 +98,33 @@ export async function upsertChannelPricing(channelId, factor_rmb_per_usd) {
   return apiRequest(`/api/portal/admin/channel-pricing/${channelId}`, {
     method: 'POST',
     body: { factor_rmb_per_usd },
+  });
+}
+
+export async function listSupplierSettlements(supplierUserId) {
+  return apiRequest(`/api/portal/admin/suppliers/${supplierUserId}/settlements`);
+}
+
+export async function appendSupplierSettlement(
+  supplierUserId,
+  { amount_usd_cents = 0, amount_rmb_cents, balance_rmb_cents, note },
+) {
+  return apiRequest(`/api/portal/admin/suppliers/${supplierUserId}/settlements`, {
+    method: 'POST',
+    body: { amount_usd_cents, amount_rmb_cents, balance_rmb_cents, note },
+  });
+}
+
+export async function updateSupplierSettlement(supplierUserId, settlementId, patch) {
+  return apiRequest(`/api/portal/admin/suppliers/${supplierUserId}/settlements/${settlementId}`, {
+    method: 'POST',
+    body: patch,
+  });
+}
+
+export async function deleteSupplierSettlement(supplierUserId, settlementId) {
+  return apiRequest(`/api/portal/admin/suppliers/${supplierUserId}/settlements/${settlementId}`, {
+    method: 'DELETE',
   });
 }
 
@@ -156,6 +188,18 @@ export async function revokeSupplierGrant(supplierUserId, channelId) {
   return apiRequest(`/api/portal/admin/suppliers/${supplierUserId}/grants/${channelId}`, {
     method: 'DELETE',
   });
+}
+
+export async function listAllGrants() {
+  return apiRequest('/api/portal/admin/grants');
+}
+
+export async function listChannelGrants(channelId) {
+  return apiRequest(`/api/portal/admin/channels/${channelId}/grants`);
+}
+
+export async function listChannelAudit(channelId) {
+  return apiRequest(`/api/portal/admin/channels/${channelId}/audit`);
 }
 
 // --- Proxied new-api channel APIs ---
