@@ -3,32 +3,40 @@ import { normalizeOps } from './permissions.js';
 
 export function getUserByUsername(db, username) {
   return db
-    .prepare('SELECT id, username, password_hash, role, created_at FROM portal_users WHERE username = ?')
+    .prepare(
+      'SELECT id, username, password_hash, role, disabled, created_at, updated_at FROM portal_users WHERE username = ?',
+    )
     .get(username);
 }
 
 export function getUserById(db, id) {
   return db
-    .prepare('SELECT id, username, password_hash, role, created_at FROM portal_users WHERE id = ?')
+    .prepare(
+      'SELECT id, username, password_hash, role, disabled, created_at, updated_at FROM portal_users WHERE id = ?',
+    )
     .get(id);
 }
 
 export function listUsers(db, role) {
   if (role) {
     return db
-      .prepare('SELECT id, username, role, created_at FROM portal_users WHERE role = ? ORDER BY id DESC')
+      .prepare(
+        'SELECT id, username, role, disabled, created_at, updated_at FROM portal_users WHERE role = ? ORDER BY id DESC',
+      )
       .all(role);
   }
-  return db.prepare('SELECT id, username, role, created_at FROM portal_users ORDER BY id DESC').all();
+  return db
+    .prepare('SELECT id, username, role, disabled, created_at, updated_at FROM portal_users ORDER BY id DESC')
+    .all();
 }
 
 export function createUser(db, { username, passwordHash, role }) {
-  const createdAt = nowMs();
+  const t = nowMs();
   const info = db
     .prepare(
-      'INSERT INTO portal_users(username, password_hash, role, created_at) VALUES(?, ?, ?, ?)',
+      'INSERT INTO portal_users(username, password_hash, role, disabled, created_at, updated_at) VALUES(?, ?, ?, 0, ?, ?)',
     )
-    .run(username, passwordHash, role, createdAt);
+    .run(username, passwordHash, role, t, t);
 
   return getUserById(db, info.lastInsertRowid);
 }

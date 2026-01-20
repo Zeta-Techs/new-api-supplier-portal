@@ -56,6 +56,64 @@ export async function me() {
   return apiRequest('/api/portal/me');
 }
 
+export async function changeMyPassword(current_password, new_password) {
+  return apiRequest('/api/portal/me/change-password', {
+    method: 'POST',
+    body: { current_password, new_password },
+  });
+}
+
+export async function getMyBilling() {
+  return apiRequest('/api/portal/me/billing');
+}
+
+export async function listSupplierBilling() {
+  return apiRequest('/api/portal/admin/suppliers/billing');
+}
+
+export async function setSupplierSettledCents(supplierUserId, settled_cents) {
+  return apiRequest(`/api/portal/admin/suppliers/${supplierUserId}/settled`, {
+    method: 'POST',
+    body: { settled_cents },
+  });
+}
+
+export async function setSupplierSettledRmbCents(supplierUserId, settled_rmb_cents) {
+  return apiRequest(`/api/portal/admin/suppliers/${supplierUserId}/settled-rmb`, {
+    method: 'POST',
+    body: { settled_rmb_cents },
+  });
+}
+
+export async function listChannelPricing() {
+  return apiRequest('/api/portal/admin/channel-pricing');
+}
+
+export async function upsertChannelPricing(channelId, factor_rmb_per_usd) {
+  return apiRequest(`/api/portal/admin/channel-pricing/${channelId}`, {
+    method: 'POST',
+    body: { factor_rmb_per_usd },
+  });
+}
+
+export async function setUserDisabled(userId, disabled) {
+  return apiRequest(`/api/portal/admin/users/${userId}/disable`, {
+    method: 'POST',
+    body: { disabled },
+  });
+}
+
+export async function resetUserPassword(userId, new_password) {
+  return apiRequest(`/api/portal/admin/users/${userId}/reset-password`, {
+    method: 'POST',
+    body: { new_password },
+  });
+}
+
+export async function deletePortalUser(userId) {
+  return apiRequest(`/api/portal/admin/users/${userId}`, { method: 'DELETE' });
+}
+
 // --- Admin APIs ---
 export async function getNewApiConfig() {
   return apiRequest('/api/portal/admin/new-api');

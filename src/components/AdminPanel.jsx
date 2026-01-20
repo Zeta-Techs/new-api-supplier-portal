@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import SupplierManagement from './SupplierManagement.jsx';
 import {
   createPortalUser,
   getNewApiConfig,
   listAllChannels,
+  listChannelPricing,
   listPortalUsers,
   listSupplierGrants,
   revokeSupplierGrant,
   setNewApiConfig,
   testNewApiConnection,
+  upsertChannelPricing,
   upsertSupplierGrant,
 } from '../lib/api.js';
 import { t } from '../lib/i18n.js';
-import { formatUsdFromQuota } from '../lib/format.js';
+import { formatUsdFromQuota, usdNumberFromQuota } from '../lib/format.js';
 
 const OPS = [
   { id: 'channel.key.update', labelKey: 'op_key_update' },
@@ -50,6 +53,8 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
   const [channelQuery, setChannelQuery] = useState('');
   const [selectedChannelIds, setSelectedChannelIds] = useState(() => new Set());
 
+  const [pricing, setPricing] = useState([]);
+
   const refresh = async () => {
     onBusyChange?.(true);
     try {
@@ -68,6 +73,14 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
         setChannels(items);
       } else {
         setChannels([]);
+      }
+
+      // pricing factors
+      try {
+        const p = await listChannelPricing();
+        setPricing(p?.items || []);
+      } catch {
+        setPricing([]);
       }
 
       if (selectedSupplierId) {
@@ -183,6 +196,12 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
     }
   };
 
+  const pricingByChannelId = useMemo(() => {
+    const m = new Map();
+    (pricing || []).forEach((p) => m.set(String(p.channel_id), Number(p.factor_rmb_per_usd)));
+    return m;
+  }, [pricing]);
+
   const toggleChannelSelect = (id) => {
     setSelectedChannelIds((prev) => {
       const next = new Set(prev);
@@ -190,6 +209,27 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
       else next.add(id);
       return next;
     });
+  };
+
+  const saveFactor = async (channelId, factorStr) => {
+    const v = String(factorStr || '').trim();
+    if (!v) return;
+    const f = Number(v);
+    if (!Number.isFinite(f) || f <= 0) {
+      pushToast?.(t(lang, 'toast_error'), 'invalid factor');
+      return;
+    }
+
+    try {
+      onBusyChange?.(true);
+      await upsertChannelPricing(channelId, f);
+      pushToast?.(t(lang, 'toast_saved'), t(lang, 'toast_saved'));
+      await refresh();
+    } catch (e) {
+      pushToast?.(t(lang, 'toast_error'), e?.message || 'Failed');
+    } finally {
+      onBusyChange?.(false);
+    }
   };
 
   const bulkGrantSelected = async () => {
@@ -298,6 +338,10 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
             </span>
           ) : null}
         </div>
+
+        <div style={{ height: 18 }} />
+
+        <SupplierManagement lang={lang} busy={busy} onBusyChange={onBusyChange} pushToast={pushToast} />
 
         <div style={{ height: 18 }} />
 
@@ -445,7 +489,24 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
                         <div className='small'>ID {c.id} · Type {c.type} · Status {c.status}</div>
                       </div>
                     </label>
-                    <div className='small'>{t(lang, 'used_quota')}: {formatUsdFromQuota(c.used_quota)}</div>
+                     <div className='small'>
+                       {t(lang, 'used_quota')}: {formatUsdFromQuota(c.used_quota)} · {t(lang, 'factor')}:{' '}
+                       <input
+                         className='input'
+                         style={{ width: 90, padding: '8px 10px' }}
+                         defaultValue={
+                           pricingByChannelId.has(String(c.id)) ? String(pricingByChannelId.get(String(c.id))) : ''
+                         }
+                         placeholder=''
+                         disabled={busy}
+                         onBlur={(e) => saveFactor(c.id, e.target.value)}
+                       />{' '}
+                       · {t(lang, 'rmb_cost')}: {' '}
+                       {pricingByChannelId.has(String(c.id))
+                         ? `¥${(usdNumberFromQuota(c.used_quota) * pricingByChannelId.get(String(c.id))).toFixed(2)}`
+                         : '-'}
+                     </div>
+
                   </div>
                 </div>
               ))}

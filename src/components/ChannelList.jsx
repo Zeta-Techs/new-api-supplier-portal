@@ -100,11 +100,17 @@ export default function ChannelList({
                       Type {c.type} · {statusLabel(lang, c.status)}
                     </div>
                   </div>
-                  <div className='badge'>
-                    <span className={`dot ${c.status === 1 ? 'dot-on' : 'dot-off'}`} />
+                   <div className='badge'>
+                     <span className={`dot ${c.status === 1 ? 'dot-on' : 'dot-off'}`} />
                      <span>{t(lang, 'used_quota')}: {formatUsdFromQuota(c.used_quota)}</span>
+                     <span style={{ marginLeft: 10 }}>
+                       {t(lang, 'factor')}: {c.price_factor === null || c.price_factor === undefined ? '-' : c.price_factor}
+                     </span>
+                     <span style={{ marginLeft: 10 }}>
+                       {t(lang, 'rmb_cost')}: {c.rmb_cost_cents === null || c.rmb_cost_cents === undefined ? '-' : `¥${(Number(c.rmb_cost_cents) / 100).toFixed(2)}`}
+                     </span>
+                   </div>
 
-                  </div>
                 </div>
               </div>
             ))}

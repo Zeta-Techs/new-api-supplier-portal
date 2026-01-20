@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import BillingCard from './BillingCard.jsx';
+import ChangePasswordCard from './ChangePasswordCard.jsx';
 import ChannelList from './ChannelList.jsx';
 import ChannelDetail from './ChannelDetail.jsx';
 import { getChannel, listAllChannels, refreshChannelBalance, testChannel, updateChannel } from '../lib/api.js';
@@ -120,27 +122,36 @@ export default function SupplierPortal({ lang, busy, onBusyChange, pushToast }) 
   };
 
   return (
-    <div className='grid'>
-      <ChannelList
-        lang={lang}
-        channels={filteredChannels}
-        totalCount={channels.length}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        query={channelQuery}
-        onQueryChange={setChannelQuery}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-      />
-      <ChannelDetail
-        lang={lang}
-        channel={selected}
-        busy={busy}
-        onToggle={onToggle}
-        onUpdateKey={onUpdateKey}
-        onRefreshQuota={onRefreshQuota}
-        onTest={onTest}
-      />
-    </div>
+    <>
+      <div className='grid-2'>
+        <BillingCard lang={lang} busy={busy} onBusyChange={onBusyChange} pushToast={pushToast} />
+        <ChangePasswordCard lang={lang} busy={busy} onBusyChange={onBusyChange} pushToast={pushToast} />
+      </div>
+
+      <div style={{ height: 14 }} />
+
+      <div className='grid'>
+        <ChannelList
+          lang={lang}
+          channels={filteredChannels}
+          totalCount={channels.length}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          query={channelQuery}
+          onQueryChange={setChannelQuery}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+        />
+        <ChannelDetail
+          lang={lang}
+          channel={selected}
+          busy={busy}
+          onToggle={onToggle}
+          onUpdateKey={onUpdateKey}
+          onRefreshQuota={onRefreshQuota}
+          onTest={onTest}
+        />
+      </div>
+    </>
   );
 }

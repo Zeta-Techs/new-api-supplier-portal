@@ -35,6 +35,8 @@ export function sanitizeUser(u) {
     id: u.id,
     username: u.username,
     role: u.role,
+    disabled: Boolean(u.disabled),
     created_at: u.created_at,
+    updated_at: u.updated_at,
   };
 }

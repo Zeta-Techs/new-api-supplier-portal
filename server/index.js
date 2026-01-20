@@ -3,7 +3,11 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 
 import { openDb, initDb } from './db.js';
+import { migrateDb } from './migrations.js';
 import { getCookieName, hashPassword, sanitizeUser, verifyPassword } from './auth.js';
+import { deleteUser, setUserDisabled, updateUserPasswordHash } from './user_repo.js';
+import { getSettledCents, setSettledCents, setSettledRmbCents } from './billing_repo.js';
+import { getChannelFactor, listChannelPricing, upsertChannelFactor } from './pricing_repo.js';
 import { getCfgKeys, getNewApiConfig, hasNewApiConfig, setConfigValue } from './config.js';
 import {
   countAdmins,
@@ -21,12 +25,14 @@ import {
 } from './repo.js';
 import { getLastConnectionTest, runConnectionTest, saveConnectionTest } from './connection_test.js';
 import { OPS, hasOp, normalizeOps } from './permissions.js';
+import { quotaToCents, quotaToUsdNumber } from './billing.js';
 import { newApiRequest } from './newapi.js';
 
 const PORT = Number(process.env.PORTAL_PORT || 3001);
 const app = express();
 const db = openDb();
 initDb(db);
+migrateDb(db);
 
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
@@ -116,6 +122,7 @@ app.post('/api/portal/auth/login', async (req, res) => {
   const { username, password } = req.body || {};
   const u = getUserByUsername(db, String(username || '').trim());
   if (!u) return jsonErr(res, 401, 'invalid credentials');
+  if (u.disabled) return jsonErr(res, 403, 'user disabled');
 
   const ok = await verifyPassword(String(password || ''), u.password_hash);
   if (!ok) return jsonErr(res, 401, 'invalid credentials');
@@ -138,6 +145,19 @@ app.get('/api/portal/me', requireAuth, (req, res) => {
     u.grants = listGrantsForSupplier(db, u.id);
   }
   jsonOk(res, { user: u });
+});
+
+app.post('/api/portal/me/change-password', requireAuth, async (req, res) => {
+  const u = req.portalUser;
+  const { current_password, new_password } = req.body || {};
+  if (!current_password || !new_password) return jsonErr(res, 400, 'missing fields');
+
+  const ok = await verifyPassword(String(current_password), u.password_hash);
+  if (!ok) return jsonErr(res, 401, 'invalid credentials');
+
+  const passwordHash = await hashPassword(String(new_password));
+  updateUserPasswordHash(db, u.id, passwordHash);
+  jsonOk(res, { ok: true });
 });
 
 // --- Admin: new-api config ---
@@ -204,6 +224,187 @@ app.post('/api/portal/admin/users', requireAuth, requireAdmin, async (req, res) 
   });
 
   jsonOk(res, { user: sanitizeUser(user) });
+});
+
+app.post('/api/portal/admin/users/:id/disable', requireAuth, requireAdmin, (req, res) => {
+  const userId = Number(req.params.id);
+  if (!userId) return jsonErr(res, 400, 'user id required');
+
+  const { disabled } = req.body || {};
+  setUserDisabled(db, userId, Boolean(disabled));
+  const u = getUserById(db, userId);
+  if (!u) return jsonErr(res, 404, 'user not found');
+  jsonOk(res, { user: sanitizeUser(u) });
+});
+
+app.post('/api/portal/admin/users/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  const { new_password } = req.body || {};
+  if (!userId) return jsonErr(res, 400, 'user id required');
+  if (!new_password) return jsonErr(res, 400, 'new_password required');
+
+  const u = getUserById(db, userId);
+  if (!u) return jsonErr(res, 404, 'user not found');
+
+  const passwordHash = await hashPassword(String(new_password));
+  updateUserPasswordHash(db, userId, passwordHash);
+  jsonOk(res, { ok: true });
+});
+
+app.delete('/api/portal/admin/users/:id', requireAuth, requireAdmin, (req, res) => {
+  const userId = Number(req.params.id);
+  if (!userId) return jsonErr(res, 400, 'user id required');
+
+  // Guard: do not allow deleting last admin.
+  const u = getUserById(db, userId);
+  if (!u) return jsonErr(res, 404, 'user not found');
+  if (u.role === 'admin' && countAdmins(db) <= 1) return jsonErr(res, 409, 'cannot delete last admin');
+
+  deleteUser(db, userId);
+  jsonOk(res, { ok: true });
+});
+
+// --- Billing ---
+async function computeUsedCentsForSupplier(supplierUserId) {
+  // Use supplier list proxy semantics: server-side paginate and filter by grants with usage.view.
+  const grants = listGrantsForSupplier(db, supplierUserId);
+  const allowed = new Set(
+    grants
+      .filter((g) => hasOp(g.operations, OPS.USAGE_VIEW))
+      .map((g) => Number(g.channel_id)),
+  );
+
+  if (!allowed.size) return { used_usd_cents: 0, used_rmb_cents: 0, missing_factor_channel_ids: [] };
+
+  const all = [];
+  let total = null;
+  for (let p = 1; p <= 500; p++) {
+    const up = await newApiRequest(db, '/api/channel/', {
+      method: 'GET',
+      query: { p, page_size: 100 },
+    });
+    const data = up?.data;
+    const pageItems = Array.isArray(data?.items) ? data.items : [];
+    all.push(...pageItems);
+    if (typeof data?.total === 'number') total = data.total;
+    if (!pageItems.length) break;
+    if (total !== null && all.length >= total) break;
+    if (pageItems.length < 100) break;
+  }
+
+  const filtered = all.filter((c) => allowed.has(Number(c.id)));
+
+  let usedUsdCents = 0;
+  let usedRmbCents = 0;
+  const missing = [];
+
+  for (const c of filtered) {
+    const usedQuota = c.used_quota;
+    const usdCents = quotaToCents(usedQuota);
+    usedUsdCents += usdCents;
+
+    const factor = getChannelFactor(db, c.id);
+    if (factor === null) {
+      missing.push(Number(c.id));
+      continue;
+    }
+
+    // RMB cents = USD cents * factor
+    const rmbCents = Math.round(usdCents * factor);
+    usedRmbCents += rmbCents;
+  }
+
+  return {
+    used_usd_cents: usedUsdCents,
+    used_rmb_cents: usedRmbCents,
+    missing_factor_channel_ids: missing.sort((a, b) => a - b),
+  };
+}
+
+app.get('/api/portal/me/billing', requireAuth, async (req, res) => {
+  const u = req.portalUser;
+  if (u.role !== 'supplier') return jsonErr(res, 403, 'supplier required');
+
+  try {
+    const usage = await computeUsedCentsForSupplier(u.id);
+    const settled = getSettledCents(db, u.id);
+
+    const balanceRmbCents = settled.settled_rmb_cents - usage.used_rmb_cents;
+
+    jsonOk(res, {
+      used_usd_cents: usage.used_usd_cents,
+      used_rmb_cents: usage.used_rmb_cents,
+      missing_factor_channel_ids: usage.missing_factor_channel_ids,
+      settled_rmb_cents: settled.settled_rmb_cents,
+      balance_rmb_cents: balanceRmbCents,
+    });
+  } catch (e) {
+    jsonErr(res, 500, e?.message || 'billing failed');
+  }
+});
+
+app.get('/api/portal/admin/suppliers/billing', requireAuth, requireAdmin, async (req, res) => {
+  const suppliers = listUsers(db, 'supplier');
+
+  const out = [];
+  for (const s of suppliers) {
+    const usage = await computeUsedCentsForSupplier(s.id);
+    const settled = getSettledCents(db, s.id);
+    out.push({
+      supplier: sanitizeUser(getUserById(db, s.id)),
+      used_usd_cents: usage.used_usd_cents,
+      used_rmb_cents: usage.used_rmb_cents,
+      missing_factor_channel_ids: usage.missing_factor_channel_ids,
+      settled_rmb_cents: settled.settled_rmb_cents,
+      balance_rmb_cents: settled.settled_rmb_cents - usage.used_rmb_cents,
+    });
+  }
+
+  jsonOk(res, { items: out });
+});
+
+app.post('/api/portal/admin/suppliers/:id/settled', requireAuth, requireAdmin, (req, res) => {
+  const supplierUserId = Number(req.params.id);
+  const u = getUserById(db, supplierUserId);
+  if (!u || u.role !== 'supplier') return jsonErr(res, 404, 'supplier not found');
+
+  const { settled_cents } = req.body || {};
+  if (settled_cents === undefined || settled_cents === null) return jsonErr(res, 400, 'settled_cents required');
+
+  setSettledCents(db, supplierUserId, Number(settled_cents));
+  jsonOk(res, { ok: true });
+});
+
+app.post('/api/portal/admin/suppliers/:id/settled-rmb', requireAuth, requireAdmin, (req, res) => {
+  const supplierUserId = Number(req.params.id);
+  const u = getUserById(db, supplierUserId);
+  if (!u || u.role !== 'supplier') return jsonErr(res, 404, 'supplier not found');
+
+  const { settled_rmb_cents } = req.body || {};
+  if (settled_rmb_cents === undefined || settled_rmb_cents === null)
+    return jsonErr(res, 400, 'settled_rmb_cents required');
+
+  setSettledRmbCents(db, supplierUserId, Number(settled_rmb_cents));
+  jsonOk(res, { ok: true });
+});
+
+// --- Pricing factors ---
+app.get('/api/portal/admin/channel-pricing', requireAuth, requireAdmin, (req, res) => {
+  jsonOk(res, { items: listChannelPricing(db) });
+});
+
+app.post('/api/portal/admin/channel-pricing/:id', requireAuth, requireAdmin, (req, res) => {
+  const channelId = Number(req.params.id);
+  const { factor_rmb_per_usd } = req.body || {};
+  if (!channelId) return jsonErr(res, 400, 'channel id required');
+  if (factor_rmb_per_usd === undefined || factor_rmb_per_usd === null)
+    return jsonErr(res, 400, 'factor_rmb_per_usd required');
+
+  const f = Number(factor_rmb_per_usd);
+  if (!Number.isFinite(f) || f <= 0) return jsonErr(res, 400, 'invalid factor');
+
+  upsertChannelFactor(db, channelId, f);
+  jsonOk(res, { ok: true });
 });
 
 // --- Admin: grants ---
@@ -377,7 +578,20 @@ app.all(channelProxyPaths, requireAuth, requireNewApiConfigured, async (req, res
       }
 
       const filtered = all.filter((c) => allowed.has(Number(c.id)));
-      return res.status(200).json({ success: true, data: { items: filtered, total: filtered.length } });
+
+      // Attach pricing factor (if set) and computed RMB cost.
+      const withPricing = filtered.map((c) => {
+        const factor = getChannelFactor(db, c.id);
+        const usdCents = quotaToCents(c.used_quota);
+        const rmbCents = factor === null ? null : Math.round(usdCents * factor);
+        return {
+          ...c,
+          price_factor: factor,
+          rmb_cost_cents: rmbCents,
+        };
+      });
+
+      return res.status(200).json({ success: true, data: { items: withPricing, total: withPricing.length } });
     }
 
     const json = await newApiRequest(db, upstreamPath, {

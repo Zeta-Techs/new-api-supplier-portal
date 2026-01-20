@@ -16,7 +16,9 @@ export function initDb(db) {
       username TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('admin','supplier')),
-      created_at INTEGER NOT NULL
+      disabled INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS portal_sessions (
@@ -39,6 +41,20 @@ export function initDb(db) {
       ok INTEGER NOT NULL,
       message TEXT NOT NULL,
       checked_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_billing (
+      supplier_user_id INTEGER PRIMARY KEY,
+      settled_cents INTEGER NOT NULL DEFAULT 0,
+      settled_rmb_cents INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(supplier_user_id) REFERENCES portal_users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS channel_pricing (
+      channel_id INTEGER PRIMARY KEY,
+      factor_rmb_per_usd REAL NOT NULL,
+      updated_at INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS supplier_grants (

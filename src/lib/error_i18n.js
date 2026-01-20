@@ -10,6 +10,18 @@ const MAP = {
     zh: '需要管理员权限',
     en: 'Admin required',
   },
+  'supplier required': {
+    zh: '需要供应商权限',
+    en: 'Supplier required',
+  },
+  'user disabled': {
+    zh: '账号已被禁用',
+    en: 'User disabled',
+  },
+  'cannot delete last admin': {
+    zh: '无法删除最后一个管理员',
+    en: 'Cannot delete last admin',
+  },
   'new-api is not configured': {
     zh: '尚未配置 new-api 连接',
     en: 'new-api is not configured',

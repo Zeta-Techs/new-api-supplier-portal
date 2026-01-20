@@ -107,6 +107,32 @@ export const DICT = {
 
     granted_n: '已授权 {n} 个渠道',
     conn_tested: '已测试',
+
+    billing: '费用统计',
+    used_total: '已用总额',
+    used_total_usd: '已用总额（USD）',
+    used_total_rmb: '已用总额（RMB）',
+    settled_amount: '已结算金额',
+    settled_rmb: '已结算金额（RMB）',
+    balance_amount: '费用结余',
+    balance_rmb: '费用结余（RMB）',
+    missing_factor: '缺失价格系数的渠道ID',
+
+    factor: '价格系数',
+    rmb_cost: '人民币费用',
+
+    change_password: '修改密码',
+    password_current: '当前密码',
+    password_new: '新密码',
+    save: '保存',
+
+    supplier_mgmt: '供应商列表',
+    supplier_mgmt_desc: '管理供应商账号：禁用/启用、删除、重置密码，以及维护已结算金额。',
+    supplier_list: '供应商',
+    reset_password: '重置密码',
+    reset_password_row: '在每个供应商行内直接重置密码（无需下拉选择）。',
+    delete: '删除',
+    disabled: '已禁用',
   },
   [LANG.EN]: {
     app_title: 'Supplier Channel Portal',
@@ -191,6 +217,32 @@ export const DICT = {
 
     granted_n: 'Granted {n} channels',
     conn_tested: 'Tested',
+
+    billing: 'Billing',
+    used_total: 'Used total',
+    used_total_usd: 'Used total (USD)',
+    used_total_rmb: 'Used total (RMB)',
+    settled_amount: 'Settled amount',
+    settled_rmb: 'Settled (RMB)',
+    balance_amount: 'Balance',
+    balance_rmb: 'Balance (RMB)',
+    missing_factor: 'Missing factor channel IDs',
+
+    factor: 'Factor',
+    rmb_cost: 'RMB cost',
+
+    change_password: 'Change password',
+    password_current: 'Current password',
+    password_new: 'New password',
+    save: 'Save',
+
+    supplier_mgmt: 'Suppliers',
+    supplier_mgmt_desc: 'Manage supplier accounts: disable/enable, delete, reset password, and maintain settled amounts.',
+    reset_password_row: 'Reset password inline per supplier row (no dropdown).',
+    supplier_list: 'Suppliers',
+    reset_password: 'Reset password',
+    delete: 'Delete',
+    disabled: 'Disabled',
   },
 };
 
