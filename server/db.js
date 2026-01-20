@@ -1,8 +1,17 @@
 import Database from 'better-sqlite3';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const DB_FILE = process.env.PORTAL_DB_FILE || './portal.sqlite';
 
 export function openDb() {
+  // better-sqlite3 does not create parent directories automatically.
+  // Ensure the DB directory exists (important for Docker volume mounts like /data/portal.sqlite).
+  const dir = path.dirname(DB_FILE);
+  if (dir && dir !== '.' && !fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
   const db = new Database(DB_FILE);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');

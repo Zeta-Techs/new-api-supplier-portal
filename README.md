@@ -85,8 +85,8 @@ Then open / 然后打开：
 - http://localhost:3001
 
 Data persistence / 数据持久化：
-- The portal uses SQLite. The compose file mounts a volume to persist the DB at `/data/portal.sqlite`.
-- 门户使用 SQLite；compose 会把数据库持久化到 volume（容器内路径 `/data/portal.sqlite`）。
+- The portal uses SQLite. The compose file bind-mounts `./data` to persist the DB at `/data/portal.sqlite`.
+- 门户使用 SQLite；compose 会把当前目录下的 `./data` 挂载到容器 `/data`，数据库文件为 `/data/portal.sqlite`。
 
 ### Build & run with docker / 使用 docker build + docker run
 
@@ -103,7 +103,7 @@ docker run --rm \
   -p 3001:3001 \
   -e PORTAL_PORT=3001 \
   -e PORTAL_DB_FILE=/data/portal.sqlite \
-  -v portal-data:/data \
+  -v "$(pwd)/data:/data" \
   portal:local
 ```
 
