@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 
 import { t } from '../lib/i18n.js';
+import { formatUsdFromQuota } from '../lib/format.js';
 
 function statusInfo(lang, status) {
   const enabled = status === 1;
@@ -46,7 +47,7 @@ export default function ChannelDetail({ lang, channel, onToggle, onUpdateKey, on
 
         <div className='kv'>
           <div className='label'>{t(lang, 'used_quota')}</div>
-          <div style={{ fontFamily: 'var(--mono)' }}>{Number(channel.used_quota ?? 0).toLocaleString()}</div>
+          <div style={{ fontFamily: 'var(--mono)' }}>{formatUsdFromQuota(channel.used_quota)}</div>
         </div>
 
         <div className='kv'>

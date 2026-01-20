@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   createPortalUser,
   getNewApiConfig,
-  listChannels,
+  listAllChannels,
   listPortalUsers,
   listSupplierGrants,
   revokeSupplierGrant,
@@ -11,6 +11,7 @@ import {
   upsertSupplierGrant,
 } from '../lib/api.js';
 import { t } from '../lib/i18n.js';
+import { formatUsdFromQuota } from '../lib/format.js';
 
 const OPS = [
   { id: 'channel.key.update', labelKey: 'op_key_update' },
@@ -62,8 +63,9 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
       setUsers(u?.users || []);
 
       if (c?.configured) {
-        const ch = await listChannels({ p: 1, page_size: 100 });
-        setChannels(ch?.items || []);
+        const ch = await listAllChannels({ pageSize: 100, maxPages: 200 });
+        const items = (ch?.items || []).slice().sort((a, b) => Number(a.id) - Number(b.id));
+        setChannels(items);
       } else {
         setChannels([]);
       }
@@ -428,7 +430,6 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
                 if (!q) return true;
                 return String(c.name || '').toLowerCase().includes(q) || String(c.id).includes(q);
               })
-              .slice(0, 100)
               .map((c) => (
                 <div key={c.id} className='item'>
                   <div className='row row-spread'>
@@ -444,7 +445,7 @@ export default function AdminPanel({ lang, busy, onBusyChange, pushToast }) {
                         <div className='small'>ID {c.id} · Type {c.type} · Status {c.status}</div>
                       </div>
                     </label>
-                    <div className='small'>{t(lang, 'used_quota')}: {Number(c.used_quota ?? 0).toLocaleString()}</div>
+                    <div className='small'>{t(lang, 'used_quota')}: {formatUsdFromQuota(c.used_quota)}</div>
                   </div>
                 </div>
               ))}

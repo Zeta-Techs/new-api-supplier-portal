@@ -1,5 +1,6 @@
 import React from 'react';
 import { t } from '../lib/i18n.js';
+import { formatUsdFromQuota } from '../lib/format.js';
 
 function statusLabel(lang, status) {
   return status === 1 ? t(lang, 'enable') : t(lang, 'disable');
@@ -101,7 +102,7 @@ export default function ChannelList({
                   </div>
                   <div className='badge'>
                     <span className={`dot ${c.status === 1 ? 'dot-on' : 'dot-off'}`} />
-                     <span>{t(lang, 'used_quota')}: {Number(c.used_quota ?? 0).toLocaleString()}</span>
+                     <span>{t(lang, 'used_quota')}: {formatUsdFromQuota(c.used_quota)}</span>
 
                   </div>
                 </div>

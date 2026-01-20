@@ -342,13 +342,8 @@ app.all(channelProxyPaths, requireAuth, requireNewApiConfigured, async (req, res
     const query = { ...req.query };
     const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined;
 
-    const json = await newApiRequest(db, upstreamPath, {
-      method: req.method,
-      query,
-      body,
-    });
-
-    // If supplier is listing channels, filter results.
+    // Supplier channel list is special: to avoid leaking channels and to avoid pagination bugs,
+    // fetch all upstream pages server-side and filter by grants.
     if (
       req.portalUser.role === 'supplier' &&
       req.method === 'GET' &&
@@ -360,12 +355,36 @@ app.all(channelProxyPaths, requireAuth, requireNewApiConfigured, async (req, res
           .filter((g) => hasOp(g.operations, OPS.USAGE_VIEW))
           .map((g) => Number(g.channel_id)),
       );
-      const data = json?.data;
-      if (data && Array.isArray(data.items)) {
-        data.items = data.items.filter((c) => allowed.has(Number(c.id)));
-        if (typeof data.total === 'number') data.total = data.items.length;
+
+      if (!allowed.size) {
+        return res.status(200).json({ success: true, data: { items: [], total: 0 } });
       }
+
+      const all = [];
+      let total = null;
+      for (let p = 1; p <= 500; p++) {
+        const up = await newApiRequest(db, '/api/channel/', {
+          method: 'GET',
+          query: { p, page_size: 100 },
+        });
+        const data = up?.data;
+        const pageItems = Array.isArray(data?.items) ? data.items : [];
+        all.push(...pageItems);
+        if (typeof data?.total === 'number') total = data.total;
+        if (!pageItems.length) break;
+        if (total !== null && all.length >= total) break;
+        if (pageItems.length < 100) break;
+      }
+
+      const filtered = all.filter((c) => allowed.has(Number(c.id)));
+      return res.status(200).json({ success: true, data: { items: filtered, total: filtered.length } });
     }
+
+    const json = await newApiRequest(db, upstreamPath, {
+      method: req.method,
+      query,
+      body,
+    });
 
     return res.status(200).json(json);
   } catch (e) {

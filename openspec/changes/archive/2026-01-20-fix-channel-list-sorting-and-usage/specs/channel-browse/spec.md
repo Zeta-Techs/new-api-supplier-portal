@@ -1,8 +1,5 @@
-# channel-browse Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-channel-search. Update Purpose after archive.
-## Requirements
 ### Requirement: Channel List Search
 The system SHALL allow the user to search visible channels within the channel list UI.
 
@@ -21,12 +18,7 @@ The system SHALL allow the user to filter visible channels by enabled/disabled s
 - **WHEN** the user applies search or status filters
 - **THEN** the resulting channel list remains sorted by channel ID ascending
 
-### Requirement: Selection Behavior With Filters
-The system SHALL handle channel selection predictably when search and filters change.
-
-#### Scenario: Selected channel filtered out
-- **WHEN** the currently selected channel is no longer visible due to search or status filtering
-- **THEN** the system selects the first visible channel if one exists; otherwise it clears the selection
+## ADDED Requirements
 
 ### Requirement: Channel List Ordering
 The system SHALL present visible channels in a stable, predictable order.
@@ -41,4 +33,3 @@ The system SHALL display used quota as a monetary amount.
 #### Scenario: Used quota shown as USD amount
 - **WHEN** used quota is displayed in the channel list or channel detail
 - **THEN** the UI shows `$${(used_quota / 500000).toFixed(4)}`
-

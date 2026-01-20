@@ -111,6 +111,30 @@ export async function listChannels(query = {}) {
   return apiRequest(`/api/channel${qs ? `?${qs}` : ''}`);
 }
 
+export async function listAllChannels({ pageSize = 100, maxPages = 200 } = {}) {
+  // new-api caps page_size to 100, so use an effective page size
+  // when determining whether we've reached the last page.
+  const effectivePageSize = Math.min(Number(pageSize) || 100, 100);
+
+  const items = [];
+  let total = null;
+
+  for (let p = 1; p <= maxPages; p++) {
+    const data = await listChannels({ p, page_size: pageSize });
+    const pageItems = Array.isArray(data?.items) ? data.items : [];
+    items.push(...pageItems);
+
+    if (typeof data?.total === 'number') total = data.total;
+
+    // stop conditions
+    if (!pageItems.length) break;
+    if (total !== null && items.length >= total) break;
+    if (pageItems.length < effectivePageSize) break;
+  }
+
+  return { items, total: total ?? items.length };
+}
+
 export async function getChannel(id) {
   return apiRequest(`/api/channel/${id}`);
 }

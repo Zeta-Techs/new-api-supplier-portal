@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ChannelList from './ChannelList.jsx';
 import ChannelDetail from './ChannelDetail.jsx';
-import { getChannel, listChannels, refreshChannelBalance, testChannel, updateChannel } from '../lib/api.js';
+import { getChannel, listAllChannels, refreshChannelBalance, testChannel, updateChannel } from '../lib/api.js';
 
 import { t } from '../lib/i18n.js';
 
@@ -19,19 +19,26 @@ export default function SupplierPortal({ lang, busy, onBusyChange, pushToast }) 
 
   const filteredChannels = useMemo(() => {
     const q = (channelQuery || '').trim().toLowerCase();
-    return channels.filter((c) => {
-      if (statusFilter === 'enabled' && c.status !== 1) return false;
-      if (statusFilter === 'disabled' && c.status === 1) return false;
-      if (q && !String(c.name || '').toLowerCase().includes(q)) return false;
-      return true;
-    });
+    return channels
+      .filter((c) => {
+        if (statusFilter === 'enabled' && c.status !== 1) return false;
+        if (statusFilter === 'disabled' && c.status === 1) return false;
+        if (q) {
+          const name = String(c.name || '').toLowerCase();
+          const id = String(c.id || '');
+          if (!name.includes(q) && !id.includes(q)) return false;
+        }
+        return true;
+      })
+      .slice()
+      .sort((a, b) => Number(a.id) - Number(b.id));
   }, [channels, channelQuery, statusFilter]);
 
   const refreshChannels = useCallback(async () => {
     onBusyChange?.(true);
     try {
-      const data = await listChannels({ p: 1, page_size: 100 });
-      const items = data?.items || [];
+      const data = await listAllChannels({ pageSize: 100, maxPages: 200 });
+      const items = (data?.items || []).slice().sort((a, b) => Number(a.id) - Number(b.id));
       setChannels(items);
       setSelectedId((prev) => {
         if (!prev && items.length) return items[0].id;
