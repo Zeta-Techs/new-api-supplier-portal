@@ -116,6 +116,11 @@ docker run --rm \
   - 默认建议同源访问 `/api/...`。
   - 如需在构建镜像时设置 `VITE_API_BASE_URL`，由于本项目使用 Cookie Session（`credentials: include`），跨域部署需要正确配置 CORS 和 Cookie。
 
+- Timezone:
+  - Container timezone can be configured via `TZ` (default `Asia/Shanghai`).
+- 时区：
+  - 可通过环境变量 `TZ` 设置容器时区（默认 `Asia/Shanghai`，即北京时间）。
+
 ---
 
 ## Configuration / 配置

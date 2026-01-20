@@ -30,8 +30,17 @@ FROM node:20-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV TZ=Asia/Shanghai
 ENV PORTAL_PORT=3001
 ENV PORTAL_DB_FILE=/data/portal.sqlite
+
+# Ensure system timezone data exists and is configured.
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends tzdata \
+  && ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime \
+  && echo "$TZ" > /etc/timezone \
+  && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /data
 

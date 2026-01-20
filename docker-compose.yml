@@ -10,6 +10,7 @@ services:
     environment:
       PORTAL_PORT: "3001"
       PORTAL_DB_FILE: /data/portal.sqlite
+      TZ: Asia/Shanghai
     volumes:
       # Persist SQLite DB next to this compose file.
       - ./data:/data
