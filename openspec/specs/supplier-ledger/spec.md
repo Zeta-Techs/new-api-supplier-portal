@@ -15,7 +15,7 @@ The system SHALL maintain a per-supplier settlement ledger.
   - post-settlement balance snapshot
 
 #### Scenario: Admin views settlement history
-- **WHEN** an Admin opens the settlement ledger UI for a supplier
+- **WHEN** an Admin expands the settlement ledger UI for a supplier from the supplier list row
 - **THEN** the system shows a table of historical settlement entries
 - **AND** the ledger UI is collapsed by default
 
