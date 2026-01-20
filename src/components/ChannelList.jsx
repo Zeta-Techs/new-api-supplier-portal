@@ -1,6 +1,6 @@
 import React from 'react';
 import { t } from '../lib/i18n.js';
-import { channelTypeLabel, formatUsdFromQuota } from '../lib/format.js';
+import { channelTypeLabel, formatRmbCostFromQuotaAndFactor, formatUsdFromQuota, rmbCentsFromQuotaAndFactor } from '../lib/format.js';
 
 function statusLabel(lang, status) {
   return status === 1 ? t(lang, 'enable') : t(lang, 'disable');
@@ -47,6 +47,10 @@ export default function ChannelList({
       if (sortKey === 'factor') {
         const f = c.price_factor;
         return f === null || f === undefined ? -Infinity : Number(f);
+      }
+      if (sortKey === 'rmb_cost') {
+        const rmbCents = rmbCentsFromQuotaAndFactor(c.used_quota, c.price_factor);
+        return rmbCents === null ? -Infinity : Number(rmbCents);
       }
       return Number(c.id);
     };
@@ -175,6 +179,11 @@ export default function ChannelList({
                       {t(lang, 'factor')}{sortMark(sortKey, sortDir, 'factor')}
                     </button>
                   </th>
+                  <th>
+                    <button className='btn' type='button' onClick={() => setSort('rmb_cost')}>
+                      {t(lang, 'rmb_cost')}{sortMark(sortKey, sortDir, 'rmb_cost')}
+                    </button>
+                  </th>
                   <th style={{ width: 260 }}>{t(lang, 'actions')}</th>
                 </tr>
               </thead>
@@ -202,6 +211,7 @@ export default function ChannelList({
                       </td>
                       <td style={{ fontFamily: 'var(--mono)' }}>{formatUsdFromQuota(c.used_quota)}</td>
                       <td style={{ fontFamily: 'var(--mono)' }}>{c.price_factor === null || c.price_factor === undefined ? '-' : c.price_factor}</td>
+                      <td style={{ fontFamily: 'var(--mono)' }}>{formatRmbCostFromQuotaAndFactor(c.used_quota, c.price_factor)}</td>
                       <td>
                         <div className='row' style={{ gap: 8, justifyContent: 'flex-end' }}>
                           <button
@@ -250,4 +260,3 @@ export default function ChannelList({
     </div>
   );
 }
-
